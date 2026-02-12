@@ -11,39 +11,50 @@ app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
-//PAMIĘĆ KONTEKSTU — historia rozmowy
-let conversationHistory = [];
+// OSOBNE HISTORIE ROZMÓW DLA KAŻDEGO UŻYTKOWNIKA
+let userConversations = {};
 
 app.post("/chat", async (req, res) => {
     try {
+        const userId = req.body.userId;
         const userMessage = req.body.message;
 
-        //WALIDACJA — Android czasem wysyła pusty tekst
+        // Walidacja userId
+        if (!userId) {
+            return res.status(400).json({ error: "Brak userId" });
+        }
+
+        // Walidacja wiadomości
         if (!userMessage || typeof userMessage !== "string" || userMessage.trim() === "") {
             return res.status(400).json({ error: "Brak wiadomości" });
         }
 
-        //Dodaj wiadomość użytkownika do historii
-        conversationHistory.push({
+        // Jeśli użytkownik nie ma jeszcze historii — utwórz ją
+        if (!userConversations[userId]) {
+            userConversations[userId] = [];
+        }
+
+        // Dodaj wiadomość użytkownika
+        userConversations[userId].push({
             role: "user",
             content: userMessage
         });
 
-        //Ogranicz historię do 30 ostatnich wiadomości
-        if (conversationHistory.length > 30) {
-            conversationHistory = conversationHistory.slice(-30);
+        // Ogranicz historię do 30 wiadomości
+        if (userConversations[userId].length > 30) {
+            userConversations[userId] = userConversations[userId].slice(-30);
         }
 
-        //Wyślij CAŁĄ historię do modelu
+        // Wyślij historię do modelu
         const completion = await groq.chat.completions.create({
             model: "llama-3.3-70b-versatile",
-            messages: conversationHistory
+            messages: userConversations[userId]
         });
 
         const reply = completion.choices[0].message.content;
 
-        //Dodaj odpowiedź AI do historii
-        conversationHistory.push({
+        // Dodaj odpowiedź AI
+        userConversations[userId].push({
             role: "assistant",
             content: reply
         });
@@ -56,14 +67,21 @@ app.post("/chat", async (req, res) => {
     }
 });
 
-//(Opcjonalnie) reset pamięci
+// Reset historii dla jednego użytkownika
 app.post("/reset", (req, res) => {
-    conversationHistory = [];
+    const userId = req.body.userId;
+
+    if (userId && userConversations[userId]) {
+        userConversations[userId] = [];
+    }
+
     res.json({ status: "reset" });
 });
 
 app.listen(3000, () => {
     console.log("Serwer działa na porcie 3000");
 });
+
+
 
 
