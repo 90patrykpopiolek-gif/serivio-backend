@@ -67,6 +67,19 @@ app.post("/chat", async (req, res) => {
     }
 });
 
+// NOWY ENDPOINT — pobieranie historii czatu
+app.get("/history", (req, res) => {
+    const userId = req.query.userId;
+
+    if (!userId) {
+        return res.status(400).json({ error: "Brak userId" });
+    }
+
+    const history = userConversations[userId] || [];
+
+    res.json({ history });
+});
+
 // Reset historii dla jednego użytkownika
 app.post("/reset", (req, res) => {
     const userId = req.body.userId;
@@ -81,6 +94,7 @@ app.post("/reset", (req, res) => {
 app.listen(3000, () => {
     console.log("Serwer działa na porcie 3000");
 });
+
 
 
 
