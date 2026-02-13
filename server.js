@@ -1,9 +1,18 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const mongoose = require("mongoose");
 const Groq = require("groq-sdk");
 
 dotenv.config();
+
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  })
+  .then(() => console.log("Połączono z MongoDB"))
+  .catch(err => console.error("Błąd połączenia z MongoDB:", err));
 
 const app = express();
 app.use(cors());
@@ -162,6 +171,7 @@ app.post("/reset", (req, res) => {
 app.listen(3000, () => {
     console.log("Serwer działa na porcie 3000");
 });
+
 
 
 
