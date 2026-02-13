@@ -7,10 +7,7 @@ const Groq = require("groq-sdk");
 dotenv.config();
 
 mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-  })
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("Połączono z MongoDB"))
   .catch(err => console.error("Błąd połączenia z MongoDB:", err));
 
@@ -171,6 +168,7 @@ app.post("/reset", (req, res) => {
 app.listen(3000, () => {
     console.log("Serwer działa na porcie 3000");
 });
+
 
 
 
