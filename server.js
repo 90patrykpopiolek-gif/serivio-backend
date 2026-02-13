@@ -11,55 +11,94 @@ app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
-// OSOBNE HISTORIE ROZMÓW DLA KAŻDEGO UŻYTKOWNIKA
-let userConversations = {};
+// =======================================
+// STRUKTURA: WIELE CZATÓW
+// =======================================
+//
+// chatsById = {
+//   "chatId123": {
+//      userId: "user123",
+//      title: "Plan treningowy",
+//      lastUsedAt: "2026-02-13T11:22:33.000Z",
+//      messages: [ { role, content }, ... ]
+//   },
+//   ...
+// }
 
+let chatsById = {};
+
+// =======================================
+// GENEROWANIE TYTUŁU CZATU
+// =======================================
+function generateTitleFromMessage(message) {
+    if (!message) return "Nowa rozmowa";
+
+    let title = message.split("\n")[0].trim();
+
+    if (title.length > 40) {
+        title = title.slice(0, 37) + "...";
+    }
+
+    return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+// =======================================
+// POST /chat
+// - tworzy nowy czat jeśli brak chatId
+// - kontynuuje istniejący jeśli chatId jest
+// =======================================
 app.post("/chat", async (req, res) => {
     try {
-        const userId = req.body.userId;
-        const userMessage = req.body.message;
+        const { userId, message, chatId } = req.body;
 
-        // Walidacja userId
-        if (!userId) {
-            return res.status(400).json({ error: "Brak userId" });
-        }
-
-        // Walidacja wiadomości
-        if (!userMessage || typeof userMessage !== "string" || userMessage.trim() === "") {
+        if (!userId) return res.status(400).json({ error: "Brak userId" });
+        if (!message || message.trim() === "")
             return res.status(400).json({ error: "Brak wiadomości" });
-        }
 
-        // Jeśli użytkownik nie ma jeszcze historii — utwórz ją
-        if (!userConversations[userId]) {
-            userConversations[userId] = [];
+        let currentChatId = chatId;
+        let chat;
+
+        // NOWY CZAT
+        if (!currentChatId || !chatsById[currentChatId]) {
+            currentChatId = Date.now().toString();
+
+            chat = {
+                userId,
+                title: generateTitleFromMessage(message),
+                lastUsedAt: new Date().toISOString(),
+                messages: []
+            };
+
+            chatsById[currentChatId] = chat;
+        } else {
+            // ISTNIEJĄCY CZAT
+            chat = chatsById[currentChatId];
+            chat.lastUsedAt = new Date().toISOString();
         }
 
         // Dodaj wiadomość użytkownika
-        userConversations[userId].push({
-            role: "user",
-            content: userMessage
-        });
+        chat.messages.push({ role: "user", content: message });
 
-        // Ogranicz historię do 30 wiadomości
-        if (userConversations[userId].length > 30) {
-            userConversations[userId] = userConversations[userId].slice(-30);
+        // Ogranicz historię
+        if (chat.messages.length > 30) {
+            chat.messages = chat.messages.slice(-30);
         }
 
-        // Wyślij historię do modelu
+        // Wyślij do modelu
         const completion = await groq.chat.completions.create({
             model: "llama-3.3-70b-versatile",
-            messages: userConversations[userId]
+            messages: chat.messages
         });
 
         const reply = completion.choices[0].message.content;
 
         // Dodaj odpowiedź AI
-        userConversations[userId].push({
-            role: "assistant",
-            content: reply
-        });
+        chat.messages.push({ role: "assistant", content: reply });
 
-        res.json({ reply });
+        res.json({
+            reply,
+            chatId: currentChatId
+        });
 
     } catch (error) {
         console.error("Chat error:", error);
@@ -67,25 +106,54 @@ app.post("/chat", async (req, res) => {
     }
 });
 
-// NOWY ENDPOINT — pobieranie historii czatu
+// =======================================
+// GET /history?chatId=...
+// =======================================
 app.get("/history", (req, res) => {
-    const userId = req.query.userId;
+    const chatId = req.query.chatId;
 
-    if (!userId) {
-        return res.status(400).json({ error: "Brak userId" });
-    }
+    if (!chatId) return res.status(400).json({ error: "Brak chatId" });
 
-    const history = userConversations[userId] || [];
+    const chat = chatsById[chatId];
 
-    res.json({ history });
+    if (!chat) return res.json({ history: [] });
+
+    res.json({ history: chat.messages });
 });
 
-// Reset historii dla jednego użytkownika
-app.post("/reset", (req, res) => {
-    const userId = req.body.userId;
+// =======================================
+// GET /chats?userId=...
+// =======================================
+app.get("/chats", (req, res) => {
+    const userId = req.query.userId;
 
-    if (userId && userConversations[userId]) {
-        userConversations[userId] = [];
+    if (!userId) return res.status(400).json({ error: "Brak userId" });
+
+    const sessions = Object.entries(chatsById)
+        .filter(([id, chat]) => chat.userId === userId)
+        .map(([id, chat]) => ({
+            chatId: id,
+            title: chat.title,
+            lastUsedAt: chat.lastUsedAt
+        }))
+        .sort((a, b) => (b.lastUsedAt || "").localeCompare(a.lastUsedAt || ""));
+
+    res.json(sessions);
+});
+
+// =======================================
+// POST /reset
+// usuwa wszystkie czaty użytkownika
+// =======================================
+app.post("/reset", (req, res) => {
+    const { userId } = req.body;
+
+    if (!userId) return res.status(400).json({ error: "Brak userId" });
+
+    for (const [id, chat] of Object.entries(chatsById)) {
+        if (chat.userId === userId) {
+            delete chatsById[id];
+        }
     }
 
     res.json({ status: "reset" });
@@ -94,6 +162,7 @@ app.post("/reset", (req, res) => {
 app.listen(3000, () => {
     console.log("Serwer działa na porcie 3000");
 });
+
 
 
 
