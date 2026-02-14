@@ -136,7 +136,7 @@ app.get("/history", async (req, res) => {
 });
 
 // =======================================
-// GET /chats — lista czatów z MongoDB
+// GET /chats — lista czatów z MongoDB (poprawiona)
 // =======================================
 app.get("/chats", async (req, res) => {
   const userId = req.query.userId;
@@ -145,7 +145,13 @@ app.get("/chats", async (req, res) => {
 
   const sessions = await ChatSession.find({ userId }).sort({ lastUsedAt: -1 });
 
-  res.json(sessions);
+  res.json(
+    sessions.map(s => ({
+      chatId: s.chatId,
+      title: s.title,
+      lastUsedAt: s.lastUsedAt
+    }))
+  );
 });
 
 // =======================================
@@ -167,6 +173,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
