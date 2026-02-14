@@ -168,11 +168,35 @@ app.post("/reset", async (req, res) => {
   res.json({ status: "reset" });
 });
 
+// =======================================
+// POST /deleteChat — usuwa jeden czat
+// =======================================
+app.post("/deleteChat", async (req, res) => {
+  const { userId, chatId } = req.body;
+
+  if (!userId) return res.status(400).json({ error: "Brak userId" });
+  if (!chatId) return res.status(400).json({ error: "Brak chatId" });
+
+  try {
+    // Usuń sesję czatu
+    await ChatSession.deleteOne({ userId, chatId });
+
+    // Usuń wszystkie wiadomości z tego czatu
+    await ChatMessage.deleteMany({ chatId });
+
+    res.json({ status: "ok" });
+  } catch (err) {
+    console.error("Delete chat error:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
