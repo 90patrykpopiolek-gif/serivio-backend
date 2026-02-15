@@ -208,7 +208,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     console.log("📁 Otrzymano plik:", req.file.originalname);
     console.log("📦 Rozmiar:", req.file.size, "bajtów");
 
-    // 1. Ustal / utwórz chatId
     let currentChatId = chatId;
 
     if (!currentChatId) {
@@ -227,29 +226,27 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       );
     }
 
-    // 2. Zapisz wiadomość użytkownika jako placeholder
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
       content: "[IMAGE]"
     });
 
-    // 3. Zamiana pliku na base64
     const base64Image = req.file.buffer.toString("base64");
 
-    // 4. NOWY POPRAWNY FORMAT GROQ VISION
     const completion = await groq.chat.completions.create({
       model: "llama-3.2-11b-vision-preview",
       messages: [
         {
           role: "user",
-          content: "Opisz co widzisz na tym zdjęciu.",
-          images: [
+          content: "Opisz co widzisz na tym zdjęciu."
+        },
+        {
+          role: "user",
+          content: [
             {
               type: "input_image",
-              image_url: {
-                url: `data:image/jpeg;base64,${base64Image}`
-              }
+              image_url: `data:image/jpeg;base64,${base64Image}`
             }
           ]
         }
@@ -258,14 +255,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
-    // 5. Zapisz odpowiedź AI
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
       content: reply
     });
 
-    // 6. Zwróć odpowiedź jak w /chat
     res.json({
       reply,
       chatId: currentChatId
@@ -282,6 +277,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
