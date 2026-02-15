@@ -197,16 +197,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     const { userId, chatId } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ error: "Brak userId" });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ error: "Brak pliku!" });
-    }
-
-    console.log("📁 Otrzymano plik:", req.file.originalname);
-    console.log("📦 Rozmiar:", req.file.size, "bajtów");
+    if (!userId) return res.status(400).json({ error: "Brak userId" });
+    if (!req.file) return res.status(400).json({ error: "Brak pliku!" });
 
     let currentChatId = chatId;
 
@@ -234,26 +226,14 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     const base64Image = req.file.buffer.toString("base64");
 
-    const completion = await groq.chat.completions.create({
+    // ⭐ NOWE, POPRAWNE API VISION
+    const result = await groq.vision.generate({
       model: "llama-3.2-11b-vision-preview",
-      messages: [
-        {
-          role: "user",
-          content: "Opisz co widzisz na tym zdjęciu."
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_image",
-              image_url: `data:image/jpeg;base64,${base64Image}`
-            }
-          ]
-        }
-      ]
+      prompt: "Opisz co widzisz na tym zdjęciu.",
+      image: `data:image/jpeg;base64,${base64Image}`
     });
 
-    const reply = completion.choices[0].message.content;
+    const reply = result.output_text;
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -261,10 +241,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       content: reply
     });
 
-    res.json({
-      reply,
-      chatId: currentChatId
-    });
+    res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
     console.error("❌ Błąd uploadu:", err);
@@ -277,6 +254,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
