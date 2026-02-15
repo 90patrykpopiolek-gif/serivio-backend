@@ -24,6 +24,7 @@
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
     "groq-sdk": "^0.37.0",
-    "mongoose": "^8.0.0"
+    "mongoose": "^8.0.0",
+    "multer": "^2.0.2"
   }
 }

@@ -5,6 +5,8 @@ const mongoose = require("mongoose");
 const Groq = require("groq-sdk");
 const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
+const multer = require("multer");
+const upload = multer({ storage: multer.memoryStorage() });
 
 
 dotenv.config();
@@ -190,6 +192,24 @@ app.post("/deleteChat", async (req, res) => {
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
+
+app.post("/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Brak pliku!" });
+    }
+
+    console.log("📁 Otrzymano plik:", req.file.originalname);
+    console.log("📦 Rozmiar:", req.file.size, "bajtów");
+
+    res.json({ message: "Plik odebrany poprawnie!" });
+
+  } catch (err) {
+    console.error("❌ Błąd uploadu:", err);
+    res.status(500).json({ message: "Błąd serwera podczas uploadu" });
+  }
+});
+
 
 const PORT = process.env.PORT || 3000;
 
