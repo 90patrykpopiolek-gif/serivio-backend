@@ -193,6 +193,8 @@ app.post("/deleteChat", async (req, res) => {
 });
 
 // obrazy 
+const axios = require("axios");
+
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     const { userId, chatId } = req.body;
@@ -226,14 +228,22 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     const base64Image = req.file.buffer.toString("base64");
 
-    // ⭐ NOWE, POPRAWNE API VISION
-    const result = await groq.vision.generate({
-      model: "llama-3.2-11b-vision-preview",
-      prompt: "Opisz co widzisz na tym zdjęciu.",
-      image: `data:image/jpeg;base64,${base64Image}`
-    });
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/vision",
+      {
+        model: "llama-3.2-11b-vision-preview",
+        prompt: "Opisz co widzisz na tym zdjęciu.",
+        image: `data:image/jpeg;base64,${base64Image}`
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${process.env.API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
-    const reply = result.output_text;
+    const reply = response.data.output_text;
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -254,6 +264,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
