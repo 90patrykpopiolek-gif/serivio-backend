@@ -8,7 +8,6 @@ const ChatMessage = require("./models/ChatMessage");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
 
-
 dotenv.config();
 
 mongoose
@@ -193,29 +192,64 @@ app.post("/deleteChat", async (req, res) => {
   }
 });
 
+// obrazy 
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
+    const { userId, chatId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "Brak userId" });
+    }
+
     if (!req.file) {
-      return res.status(400).json({ message: "Brak pliku!" });
+      return res.status(400).json({ error: "Brak pliku!" });
     }
 
     console.log("📁 Otrzymano plik:", req.file.originalname);
     console.log("📦 Rozmiar:", req.file.size, "bajtów");
 
-    // 1. Zamiana pliku na base64
+    // 1. Ustal / utwórz chatId
+    let currentChatId = chatId;
+
+    if (!currentChatId) {
+      currentChatId = Date.now().toString();
+
+      await ChatSession.create({
+        chatId: currentChatId,
+        userId,
+        title: "Rozmowa ze zdjęciem",
+        lastUsedAt: new Date()
+      });
+    } else {
+      await ChatSession.updateOne(
+        { chatId: currentChatId },
+        { lastUsedAt: new Date() }
+      );
+    }
+
+    // 2. Zapisz wiadomość użytkownika jako placeholder
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "user",
+      content: "[IMAGE]"
+    });
+
+    // 3. Zamiana pliku na base64
     const base64Image = req.file.buffer.toString("base64");
 
-    // 2. Wywołanie modelu AI (Groq Vision)
+    // 4. NOWY POPRAWNY FORMAT GROQ VISION
     const completion = await groq.chat.completions.create({
       model: "llama-3.2-11b-vision-preview",
       messages: [
         {
           role: "user",
-          content: [
-            { type: "text", text: "Opisz co widzisz na tym zdjęciu." },
+          content: "Opisz co widzisz na tym zdjęciu.",
+          images: [
             {
               type: "input_image",
-              image_url: `data:image/jpeg;base64,${base64Image}`
+              image_url: {
+                url: `data:image/jpeg;base64,${base64Image}`
+              }
             }
           ]
         }
@@ -224,14 +258,22 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
-    // 3. Zwrócenie odpowiedzi AI do Androida
+    // 5. Zapisz odpowiedź AI
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "assistant",
+      content: reply
+    });
+
+    // 6. Zwróć odpowiedź jak w /chat
     res.json({
-      reply: reply
+      reply,
+      chatId: currentChatId
     });
 
   } catch (err) {
     console.error("❌ Błąd uploadu:", err);
-    res.status(500).json({ message: "Błąd serwera podczas uploadu" });
+    res.status(500).json({ error: "Błąd serwera podczas uploadu" });
   }
 });
 
@@ -240,6 +282,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
