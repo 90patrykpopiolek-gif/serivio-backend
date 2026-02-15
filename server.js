@@ -202,7 +202,32 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     console.log("📁 Otrzymano plik:", req.file.originalname);
     console.log("📦 Rozmiar:", req.file.size, "bajtów");
 
-    res.json({ message: "Plik odebrany poprawnie!" });
+    // 1. Zamiana pliku na base64
+    const base64Image = req.file.buffer.toString("base64");
+
+    // 2. Wywołanie modelu AI (Groq Vision)
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.2-11b-vision-preview",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Opisz co widzisz na tym zdjęciu." },
+            {
+              type: "input_image",
+              image_url: `data:image/jpeg;base64,${base64Image}`
+            }
+          ]
+        }
+      ]
+    });
+
+    const reply = completion.choices[0].message.content;
+
+    // 3. Zwrócenie odpowiedzi AI do Androida
+    res.json({
+      reply: reply
+    });
 
   } catch (err) {
     console.error("❌ Błąd uploadu:", err);
@@ -210,12 +235,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
