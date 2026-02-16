@@ -193,8 +193,6 @@ app.post("/deleteChat", async (req, res) => {
 });
 
 // obrazy 
-const axios = require("axios");
-
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     const { userId, chatId } = req.body;
@@ -204,6 +202,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     let currentChatId = chatId;
 
+    // Jeśli nie ma czatu — tworzymy nowy
     if (!currentChatId) {
       currentChatId = Date.now().toString();
 
@@ -220,31 +219,36 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       );
     }
 
+    // Zapisz placeholder wiadomości użytkownika
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
       content: "[IMAGE]"
     });
 
+    // Konwersja zdjęcia do base64
     const base64Image = req.file.buffer.toString("base64");
+    const dataUrl = `data:image/jpeg;base64,${base64Image}`;
 
-    const response = await axios.post(
-      "https://api.groq.com/openai/v1/vision",
-      {
-        model: "llama-3.2-11b-vision-preview",
-        prompt: "Opisz co widzisz na tym zdjęciu.",
-        image: `data:image/jpeg;base64,${base64Image}`
-      },
-      {
-        headers: {
-          "Authorization": `Bearer ${process.env.API_KEY}`,
-          "Content-Type": "application/json"
+    // Wysyłamy obraz do modelu multimodalnego
+    const completion = await groq.chat.completions.create({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Opisz dokładnie co widzisz na tym zdjęciu po polsku." },
+            { type: "image", image: dataUrl }
+          ]
         }
-      }
-    );
+      ],
+      max_tokens: 600,
+      temperature: 0.4
+    });
 
-    const reply = response.data.output_text;
+    const reply = completion.choices[0].message.content;
 
+    // Zapisz odpowiedź AI
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
@@ -264,6 +268,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
