@@ -192,7 +192,9 @@ app.post("/deleteChat", async (req, res) => {
   }
 });
 
-// obrazy 
+// =======================================
+// POST /upload — analiza zdjęcia (Vision)
+// =======================================
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     const { userId, chatId } = req.body;
@@ -228,7 +230,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     // Konwersja zdjęcia do base64
     const base64Image = req.file.buffer.toString("base64");
-    const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+    const mimeType = req.file.mimetype || "image/jpeg";
+    const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
     // Wysyłamy obraz do modelu multimodalnego
     const completion = await groq.chat.completions.create({
@@ -237,8 +240,14 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         {
           role: "user",
           content: [
-            { type: "text", text: "Opisz dokładnie co widzisz na tym zdjęciu po polsku." },
-            { type: "image", image: dataUrl }
+            {
+              type: "text",
+              text: "Opisz dokładnie co widzisz na tym zdjęciu, używając języka użytkownika."
+            },
+            {
+              type: "image_url",
+              image_url: { url: dataUrl }
+            }
           ]
         }
       ],
@@ -246,7 +255,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       temperature: 0.4
     });
 
-    const reply = completion.choices[0].message.content;
+    const reply = completion.choices[0].message.content.trim();
 
     // Zapisz odpowiedź AI
     await ChatMessage.create({
@@ -268,6 +277,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
