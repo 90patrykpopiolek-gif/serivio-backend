@@ -7,6 +7,8 @@ const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
+const pdfParse = require("pdf-parse");
+const { Document } = require("docx");
 
 dotenv.config();
 
@@ -285,11 +287,111 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
+// =======================================
+// POST /upload-document — analiza PDF/DOCX/TXT
+// =======================================
+app.post("/upload-document", upload.single("file"), async (req, res) => {
+  try {
+    const { userId, chatId, message } = req.body;
+
+    if (!userId) return res.status(400).json({ error: "Brak userId" });
+    if (!req.file) return res.status(400).json({ error: "Brak pliku!" });
+
+    let currentChatId = chatId;
+
+    if (!currentChatId) {
+      currentChatId = Date.now().toString();
+
+      await ChatSession.create({
+        chatId: currentChatId,
+        userId,
+        title: "Dokument",
+        lastUsedAt: new Date()
+      });
+    } else {
+      await ChatSession.updateOne(
+        { chatId: currentChatId },
+        { lastUsedAt: new Date() }
+      );
+    }
+
+    const text = await extractTextFromDocument(req.file);
+
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "user",
+      type: "document",
+      content: message || "[DOCUMENT]",
+      documentText: text
+    });
+
+    const prompt = `
+Oto treść dokumentu:
+
+---
+${text}
+---
+
+Użytkownik pyta: "${message || "Streszcz dokument"}"
+
+Odpowiedz tylko na podstawie dokumentu.
+    `;
+
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }]
+    });
+
+    const reply = completion.choices[0].message.content.trim();
+
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "assistant",
+      type: "text",
+      content: reply
+    });
+
+    res.json({ reply, chatId: currentChatId });
+
+  } catch (err) {
+    console.error("❌ Błąd dokumentu:", err);
+    res.status(500).json({ error: "Błąd serwera podczas analizy dokumentu" });
+  }
+});
+
+// =======================================
+// WYCIĄGANIE TEKSTU Z DOKUMENTÓW
+// =======================================
+async function extractTextFromDocument(file) {
+  const name = file.originalname.toLowerCase();
+
+  if (name.endsWith(".pdf")) return await extractFromPdf(file);
+  if (name.endsWith(".docx")) return await extractFromDocx(file);
+  if (name.endsWith(".txt")) return extractFromTxt(file);
+
+  return "Nieobsługiwany format pliku.";
+}
+
+async function extractFromPdf(file) {
+  const data = await pdfParse(file.buffer);
+  return data.text || "Brak tekstu w PDF.";
+}
+
+async function extractFromDocx(file) {
+  const doc = await Document.load(file.buffer);
+  return doc.getText() || "Brak tekstu w DOCX.";
+}
+
+function extractFromTxt(file) {
+  return file.buffer.toString("utf8");
+}
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
