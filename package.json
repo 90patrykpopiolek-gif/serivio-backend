@@ -26,6 +26,8 @@
     "express": "^5.2.1",
     "groq-sdk": "^0.37.0",
     "mongoose": "^8.0.0",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "pdf-parse": "^1.1.1",
+    "docx": "^8.0.0"
   }
 }
