@@ -221,17 +221,19 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       );
     }
 
-    // Zapisz placeholder wiadomości użytkownika
-    await ChatMessage.create({
-      chatId: currentChatId,
-      role: "user",
-      content: "[IMAGE]"
-    });
-
     // Konwersja zdjęcia do base64
     const base64Image = req.file.buffer.toString("base64");
     const mimeType = req.file.mimetype || "image/jpeg";
     const dataUrl = `data:${mimeType};base64,${base64Image}`;
+
+    // ZAPISUJEMY ZDJĘCIE JAKO WIADOMOŚĆ
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "user",
+      type: "image",
+      content: "[IMAGE]",
+      imageData: base64Image
+    });
 
     // Wysyłamy obraz do modelu multimodalnego
     const completion = await groq.chat.completions.create({
@@ -261,6 +263,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
+      type: "text",
       content: reply
     });
 
@@ -277,6 +280,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
