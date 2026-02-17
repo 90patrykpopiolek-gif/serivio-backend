@@ -197,7 +197,7 @@ app.post("/deleteChat", async (req, res) => {
 // =======================================
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    const { userId, chatId } = req.body;
+    const { userId, chatId, message } = req.body;
 
     if (!userId) return res.status(400).json({ error: "Brak userId" });
     if (!req.file) return res.status(400).json({ error: "Brak pliku!" });
@@ -226,30 +226,40 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const mimeType = req.file.mimetype || "image/jpeg";
     const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-    // ZAPISUJEMY ZDJĘCIE JAKO WIADOMOŚĆ
+    // Zapis zdjęcia jako wiadomość
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
       type: "image",
-      content: "[IMAGE]",
+      content: message && message.trim() !== "" ? message : "[IMAGE]",
       imageData: base64Image
     });
 
-    // Wysyłamy obraz do modelu multimodalnego
+    // 🔥 Budujemy prompt zależnie od tego, czy użytkownik napisał tekst
+    let promptText = "";
+
+    if (!message || message.trim() === "") {
+      // SAMO ZDJĘCIE
+      promptText = 
+        "Użytkownik wysłał zdjęcie bez tekstu. " +
+        "Opisz naturalnie i krótko co widzisz na zdjęciu (1–2 zdania).";
+    } else {
+      // ZDJĘCIE + TEKST
+      promptText =
+        `Użytkownik napisał: "${message}". ` +
+        "Najpierw krótko i naturalnie opisz co widzisz na zdjęciu (1–2 zdania). " +
+        "Następnie odpowiedz na pytanie użytkownika w sposób rozmowny i pomocny.";
+    }
+
+    // Wysyłamy do modelu
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: "Opisz dokładnie co widzisz na tym zdjęciu, używając języka użytkownika."
-            },
-            {
-              type: "image_url",
-              image_url: { url: dataUrl }
-            }
+            { type: "text", text: promptText },
+            { type: "image_url", image_url: { url: dataUrl } }
           ]
         }
       ],
@@ -259,7 +269,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     const reply = completion.choices[0].message.content.trim();
 
-    // Zapisz odpowiedź AI
+    // Zapis odpowiedzi AI
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
@@ -280,6 +290,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
