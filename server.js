@@ -59,7 +59,7 @@ function generateTitleFromMessage(message) {
 }
 
 // =======================================
-// POST /chat — zapis do MongoDB
+// POST /chat — zapis do MongoDB + dokumenty
 // =======================================
 app.post("/chat", async (req, res) => {
   try {
@@ -105,42 +105,33 @@ app.post("/chat", async (req, res) => {
       content: m.content
     }));
 
-    //  AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO PLIKU (OBRAZ LUB DOKUMENT)
-const session = await ChatSession.findOne({ chatId: currentChatId });
+    // AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO DOKUMENTU
+    const session = await ChatSession.findOne({ chatId: currentChatId });
 
-if (session.activeFileId) {
-  const file = await File.findOne({ fileId: session.activeFileId });
+    if (session?.activeFileId) {
+      const file = await File.findOne({ fileId: session.activeFileId });
 
-  if (file) {
-    // Sprawdź, czy ostatnia wiadomość to dokument
-    const docMessage = await ChatMessage.findOne({
-      chatId: currentChatId,
-      type: "document"
-    }).sort({ timestamp: -1 });
+      if (file) {
+        // Szukamy ostatniej wiadomości typu "document"
+        const docMessage = await ChatMessage.findOne({
+          chatId: currentChatId,
+          type: "document"
+        }).sort({ timestamp: -1 });
 
-    // Jeśli to dokument → dołącz tekst dokumentu
-    if (docMessage && docMessage.documentText) {
-      messagesForModel.push({
-        role: "user",
-        content: `Oto treść dokumentu:\n\n${docMessage.documentText}\n\nUżytkownik pyta: ${message}`
-      });
-    } else {
-      // Jeśli to obraz → dołącz obraz
-      const fileBuffer = fs.readFileSync(file.path);
-      const base64 = fileBuffer.toString("base64");
-
-      messagesForModel.push({
-        role: "user",
-        content: [
-          { type: "text", text: message },
-          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } }
-        ]
-      });
+        if (docMessage && docMessage.documentText) {
+          messagesForModel.push({
+            role: "user",
+            content:
+              `Oto treść dokumentu:\n\n` +
+              `${docMessage.documentText}\n\n` +
+              `Użytkownik pyta: ${message}`
+          });
+        }
+        // UWAGA: brak obsługi obrazu w /chat — zdjęcia obsługuje /upload
+      }
     }
-  }
-}
 
-    // Wyślij do modelu
+    // Wyślij do modelu tekstowego
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: messagesForModel
@@ -517,6 +508,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
