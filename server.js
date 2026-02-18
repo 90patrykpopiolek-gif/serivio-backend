@@ -97,13 +97,13 @@ app.post("/chat", async (req, res) => {
 
     // Pobierz historię do modelu
     const history = await ChatMessage.find({ chatId: currentChatId })
-      .sort({ timestamp: 1 })
-      .limit(30);
+  .sort({ timestamp: 1 })
+  .limit(10); // zmniejszamy historię, żeby nie przekraczać limitu tokenów
 
-    const messagesForModel = history.map(m => ({
-      role: m.role,
-      content: m.content
-    }));
+const messagesForModel = history.map(m => ({
+  role: m.role,
+  content: typeof m.content === "string" ? m.content : ""
+}));
 
     // AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO DOKUMENTU
     const session = await ChatSession.findOne({ chatId: currentChatId });
@@ -132,10 +132,11 @@ app.post("/chat", async (req, res) => {
     }
 
     // Wyślij do modelu tekstowego
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: messagesForModel
-    });
+const completion = await groq.chat.completions.create({
+  model: "llama-3.3-70b-versatile",
+  messages: messagesForModel,
+  max_tokens: 800
+});
 
     const reply = completion.choices[0].message.content;
 
@@ -508,6 +509,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
