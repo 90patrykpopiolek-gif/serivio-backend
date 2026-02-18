@@ -8,6 +8,7 @@ const ChatMessageSchema = new mongoose.Schema({
   type: { type: String, default: "text" }, // "text" | "image"
   content: { type: String, required: true }, // tekst lub placeholder "[IMAGE]"
   imageData: { type: String, default: null }, // base64 jeśli to zdjęcie
+  documentText: { type: String, default: null }, // tekst dokumentu
 
   timestamp: { type: Date, default: Date.now }
 });
