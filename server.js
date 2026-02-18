@@ -5,10 +5,16 @@ const mongoose = require("mongoose");
 const Groq = require("groq-sdk");
 const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
+const File = require("./models/File");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
 const pdfParse = require("pdf-parse");
 const { Document } = require("docx");
+const fs = require("fs");
+const path = require("path");
+
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
 dotenv.config();
 
@@ -99,6 +105,26 @@ app.post("/chat", async (req, res) => {
       content: m.content
     }));
 
+    //  AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO PLIKU
+const session = await ChatSession.findOne({ chatId: currentChatId });
+
+if (session.activeFileId) {
+  const file = await File.findOne({ fileId: session.activeFileId });
+
+  if (file) {
+    const fileBuffer = fs.readFileSync(file.path);
+    const base64 = fileBuffer.toString("base64");
+
+    messagesForModel.push({
+      role: "user",
+      content: [
+        { type: "text", text: message },
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } }
+      ]
+    });
+  }
+}
+
     // Wyślij do modelu
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -168,6 +194,19 @@ app.post("/reset", async (req, res) => {
   await ChatSession.deleteMany({ userId });
   await ChatMessage.deleteMany({ userId });
 
+  //  USUWANIE WSZYSTKICH PLIKÓW UŻYTKOWNIKA
+const userFiles = await File.find({ userId });
+
+for (const f of userFiles) {
+  try {
+    if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+  } catch (err) {
+    console.error("Błąd usuwania pliku:", err);
+  }
+}
+
+await File.deleteMany({ userId });
+
   res.json({ status: "reset" });
 });
 
@@ -186,6 +225,19 @@ app.post("/deleteChat", async (req, res) => {
 
     // Usuń wszystkie wiadomości z tego czatu
     await ChatMessage.deleteMany({ chatId });
+
+    //  USUWANIE WSZYSTKICH PLIKÓW POWIĄZANYCH Z CZATEM
+const files = await File.find({ chatId });
+
+for (const f of files) {
+  try {
+    if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+  } catch (err) {
+    console.error("Błąd usuwania pliku:", err);
+  }
+}
+
+await File.deleteMany({ chatId });
 
     res.json({ status: "ok" });
   } catch (err) {
@@ -223,6 +275,24 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       );
     }
 
+    //  ZAPIS PLIKU NA DYSKU
+const fileId = Date.now().toString();
+const filePath = path.join(UPLOAD_DIR, fileId);
+fs.writeFileSync(filePath, req.file.buffer);
+
+//  ZAPIS METADANYCH W MONGO
+await File.create({
+  fileId,
+  chatId: currentChatId,
+  path: filePath
+});
+
+//  USTAWIENIE AKTYWNEGO PLIKU
+await ChatSession.updateOne(
+  { chatId: currentChatId },
+  { activeFileId: fileId }
+);
+
     // Konwersja zdjęcia do base64
     const base64Image = req.file.buffer.toString("base64");
     const mimeType = req.file.mimetype || "image/jpeg";
@@ -237,7 +307,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       imageData: base64Image
     });
 
-    // 🔥 Budujemy prompt zależnie od tego, czy użytkownik napisał tekst
+    //  Budujemy prompt zależnie od tego, czy użytkownik napisał tekst
     let promptText = "";
 
     if (!message || message.trim() === "") {
@@ -315,6 +385,24 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       );
     }
 
+    //  ZAPIS PLIKU NA DYSKU
+const fileId = Date.now().toString();
+const filePath = path.join(UPLOAD_DIR, fileId);
+fs.writeFileSync(filePath, req.file.buffer);
+
+//  ZAPIS METADANYCH W MONGO
+await File.create({
+  fileId,
+  chatId: currentChatId,
+  path: filePath
+});
+
+//  USTAWIENIE AKTYWNEGO PLIKU
+await ChatSession.updateOne(
+  { chatId: currentChatId },
+  { activeFileId: fileId }
+);
+
     const text = await extractTextFromDocument(req.file);
 
     await ChatMessage.create({
@@ -386,11 +474,35 @@ function extractFromTxt(file) {
   return file.buffer.toString("utf8");
 }
 
+//  AUTOMATYCZNE USUWANIE PLIKÓW STARSZYCH NIŻ 24H
+setInterval(async () => {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24h
+
+  const oldFiles = await File.find({
+    createdAt: { $lt: new Date(cutoff) }
+  });
+
+  for (const f of oldFiles) {
+    try {
+      if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+    } catch (err) {
+      console.error("Błąd usuwania starego pliku:", err);
+    }
+  }
+
+  await File.deleteMany({
+    createdAt: { $lt: new Date(cutoff) }
+  });
+
+}, 60 * 60 * 1000); // sprawdzaj co godzinę
+
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
