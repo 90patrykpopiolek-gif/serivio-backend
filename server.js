@@ -105,23 +105,38 @@ app.post("/chat", async (req, res) => {
       content: m.content
     }));
 
-    //  AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO PLIKU
+    //  AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO PLIKU (OBRAZ LUB DOKUMENT)
 const session = await ChatSession.findOne({ chatId: currentChatId });
 
 if (session.activeFileId) {
   const file = await File.findOne({ fileId: session.activeFileId });
 
   if (file) {
-    const fileBuffer = fs.readFileSync(file.path);
-    const base64 = fileBuffer.toString("base64");
+    // Sprawdź, czy ostatnia wiadomość to dokument
+    const docMessage = await ChatMessage.findOne({
+      chatId: currentChatId,
+      type: "document"
+    }).sort({ timestamp: -1 });
 
-    messagesForModel.push({
-      role: "user",
-      content: [
-        { type: "text", text: message },
-        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } }
-      ]
-    });
+    // Jeśli to dokument → dołącz tekst dokumentu
+    if (docMessage && docMessage.documentText) {
+      messagesForModel.push({
+        role: "user",
+        content: `Oto treść dokumentu:\n\n${docMessage.documentText}\n\nUżytkownik pyta: ${message}`
+      });
+    } else {
+      // Jeśli to obraz → dołącz obraz
+      const fileBuffer = fs.readFileSync(file.path);
+      const base64 = fileBuffer.toString("base64");
+
+      messagesForModel.push({
+        role: "user",
+        content: [
+          { type: "text", text: message },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } }
+        ]
+      });
+    }
   }
 }
 
@@ -502,6 +517,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
