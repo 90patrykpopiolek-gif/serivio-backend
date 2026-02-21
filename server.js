@@ -97,7 +97,7 @@ app.post("/chat", async (req, res) => {
 
     // Pobierz historię do modelu
     const history = await ChatMessage.find({ chatId: currentChatId })
-  .sort({ timestamp: 1 })
+  .sort({ createdAt: 1 })
   .limit(10); // zmniejszamy historię, żeby nie przekraczać limitu tokenów
 
 const messagesForModel = history.map(m => ({
@@ -114,9 +114,9 @@ const messagesForModel = history.map(m => ({
       if (file) {
         // Szukamy ostatniej wiadomości typu "document"
         const docMessage = await ChatMessage.findOne({
-          chatId: currentChatId,
-          type: "document"
-        }).sort({ timestamp: -1 });
+  chatId: currentChatId,
+  type: "document"
+}).sort({ createdAt: -1 });
 
         if (docMessage && docMessage.documentText) {
           messagesForModel.push({
@@ -166,7 +166,7 @@ app.get("/history", async (req, res) => {
 
   if (!chatId) return res.status(400).json({ error: "Brak chatId" });
 
-  const history = await ChatMessage.find({ chatId }).sort({ timestamp: 1 });
+  const history = await ChatMessage.find({ chatId }).sort({ createdAt: 1 });
 
   res.json({ history });
 });
@@ -509,6 +509,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
