@@ -1,17 +1,17 @@
 const mongoose = require("mongoose");
 
-const ChatMessageSchema = new mongoose.Schema({
-  chatId: { type: String, required: true },
-  role: { type: String, required: true }, // "user" lub "assistant"
+const ChatMessageSchema = new mongoose.Schema(
+  {
+    chatId: { type: String, required: true },
+    role: { type: String, required: true },
 
-  // NOWE POLA
-  type: { type: String, default: "text" }, // "text" | "image"
-  content: { type: String, required: true }, // tekst lub placeholder "[IMAGE]"
-  imageData: { type: String, default: null }, // base64 jeśli to zdjęcie
-  documentText: { type: String, default: null }, // tekst dokumentu
-
-  timestamp: { type: Date, default: Date.now }
-});
+    type: { type: String, default: "text" },
+    content: { type: String, required: true },
+    imageData: { type: String, default: null },
+    documentText: { type: String, default: null }
+  },
+  { timestamps: true }
+);
 
 module.exports = mongoose.model("ChatMessage", ChatMessageSchema);
 
