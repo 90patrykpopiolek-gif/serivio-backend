@@ -134,15 +134,15 @@ if (lastImageDescription && lastImageDescription.imageDescription) {
   type: "document"
 }).sort({ createdAt: -1 });
 
-        if (docMessage && docMessage.documentText) {
-          messagesForModel.push({
-            role: "user",
-            content:
-              `Oto treść dokumentu:\n\n` +
-              `${docMessage.documentText}\n\n` +
-              `Użytkownik pyta: ${message}`
-          });
-        }
+        if (docMessage && docMessage.documentSummary) {
+  messagesForModel.push({
+    role: "user",
+    content:
+      `Oto streszczenie dokumentu:\n\n` +
+      `${docMessage.documentSummary}\n\n` +
+      `Użytkownik pyta: ${message}`
+  });
+}
         // UWAGA: brak obsługi obrazu w /chat — zdjęcia obsługuje /upload
       }
     }
@@ -439,13 +439,33 @@ await ChatSession.updateOne(
 
     const text = await extractTextFromDocument(req.file);
 
+    // Generowanie streszczenia dokumentu
+const summaryPrompt = `
+Streść ten dokument w maksymalnie 20 zdaniach.
+Skup się na najważniejszych informacjach, pomijaj szczegóły techniczne.
+
+---
+${text}
+---
+`;
+
+const summaryCompletion = await groq.chat.completions.create({
+  model: "llama-3.3-70b-versatile",
+  messages: [{ role: "user", content: summaryPrompt }],
+  max_tokens: 500
+});
+
+const summary = summaryCompletion.choices[0].message.content.trim();
+
+
     await ChatMessage.create({
-      chatId: currentChatId,
-      role: "user",
-      type: "document",
-      content: message || "[DOCUMENT]",
-      documentText: text
-    });
+  chatId: currentChatId,
+  role: "user",
+  type: "document",
+  content: message || "[DOCUMENT]",
+  documentText: text,
+  documentSummary: summary
+});
 
     const prompt = `
 Oto treść dokumentu:
@@ -536,6 +556,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
