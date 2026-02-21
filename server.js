@@ -334,17 +334,19 @@ await ChatSession.updateOne(
     let promptText = "";
 
     if (!message || message.trim() === "") {
-      // SAMO ZDJĘCIE
-      promptText = 
-        "Użytkownik wysłał zdjęcie bez tekstu. " +
-        "Opisz naturalnie i krótko co widzisz na zdjęciu (1–2 zdania).";
-    } else {
-      // ZDJĘCIE + TEKST
-      promptText =
-        `Użytkownik napisał: "${message}". ` +
-        "Najpierw krótko i naturalnie opisz co widzisz na zdjęciu (1–2 zdania). " +
-        "Następnie odpowiedz na pytanie użytkownika w sposób rozmowny i pomocny.";
-    }
+  promptText = 
+    "Użytkownik wysłał zdjęcie bez tekstu. " +
+    "Opisz bardzo szczegółowo wszystko, co widzisz na zdjęciu. " +
+    "Uwzględnij wszystkie obiekty, zwierzęta, kolory, tło, meble, małe detale, " +
+    "położenie elementów, tekstury i wszystko, co może być istotne.";
+} else {
+  promptText =
+    `Użytkownik napisał: "${message}". ` +
+    "Najpierw opisz bardzo szczegółowo wszystko, co widzisz na zdjęciu. " +
+    "Uwzględnij obiekty, zwierzęta, kolory, tło, meble, małe detale, " +
+    "położenie elementów i tekstury. " +
+    "Następnie odpowiedz na pytanie użytkownika w sposób rozmowny i pomocny.";
+}
 
     // Wysyłamy do modelu
     const completion = await groq.chat.completions.create({
@@ -534,6 +536,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
