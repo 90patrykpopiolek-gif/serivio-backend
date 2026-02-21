@@ -105,6 +105,22 @@ const messagesForModel = history.map(m => ({
   content: typeof m.content === "string" ? m.content : ""
 }));
 
+    // DOŁĄCZANIE OSTATNIEGO OPISU ZDJĘCIA
+const lastImageDescription = await ChatMessage.findOne({
+  chatId: currentChatId,
+  type: "image_description"
+}).sort({ createdAt: -1 });
+
+if (lastImageDescription && lastImageDescription.imageDescription) {
+  messagesForModel.push({
+    role: "user",
+    content:
+      `Opis ostatniego zdjęcia użytkownika:\n` +
+      `${lastImageDescription.imageDescription}\n\n` +
+      `Użytkownik teraz pyta: ${message}`
+  });
+}
+
     // AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO DOKUMENTU
     const session = await ChatSession.findOne({ chatId: currentChatId });
 
@@ -356,6 +372,15 @@ await ChatSession.updateOne(
       content: reply
     });
 
+    // Zapis opisu zdjęcia jako osobna wiadomość systemowa
+await ChatMessage.create({
+  chatId: currentChatId,
+  role: "system",
+  type: "image_description",
+  content: "[IMAGE_DESCRIPTION]",
+  imageDescription: reply
+});
+
     res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
@@ -509,6 +534,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
