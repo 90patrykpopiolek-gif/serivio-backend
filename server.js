@@ -390,7 +390,7 @@ await ChatMessage.create({
 });
 
 // =======================================
-// POST /upload-document — analiza PDF/DOCX/TXT
+// POST /upload-document — analiza PDF/DOCX/TXT (OPTYMALIZOWANE)
 // =======================================
 app.post("/upload-document", upload.single("file"), async (req, res) => {
   try {
@@ -417,69 +417,72 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       );
     }
 
-    //  ZAPIS PLIKU NA DYSKU
-const fileId = Date.now().toString();
-const filePath = path.join(UPLOAD_DIR, fileId);
-fs.writeFileSync(filePath, req.file.buffer);
+    // Zapis pliku
+    const fileId = Date.now().toString();
+    const filePath = path.join(UPLOAD_DIR, fileId);
+    fs.writeFileSync(filePath, req.file.buffer);
 
-//  ZAPIS METADANYCH W MONGO
-await File.create({
-  fileId,
-  chatId: currentChatId,
-  path: filePath
-});
+    await File.create({
+      fileId,
+      chatId: currentChatId,
+      path: filePath
+    });
 
-//  USTAWIENIE AKTYWNEGO PLIKU
-await ChatSession.updateOne(
-  { chatId: currentChatId },
-  { activeFileId: fileId }
-);
+    await ChatSession.updateOne(
+      { chatId: currentChatId },
+      { activeFileId: fileId }
+    );
 
+    // Wyciąganie tekstu
     const text = await extractTextFromDocument(req.file);
 
-    // Generowanie streszczenia dokumentu
-const summaryPrompt = `
+    // ============================
+    // GENEROWANIE STRESZCZENIA (10 zdań)
+    // ============================
+    const summaryPrompt = `
 Streść ten dokument w maksymalnie 20 zdaniach.
-Skup się na najważniejszych informacjach, pomijaj szczegóły techniczne.
+Skup się tylko na najważniejszych informacjach, pomijając szczegóły techniczne.
 
 ---
 ${text}
 ---
 `;
 
-const summaryCompletion = await groq.chat.completions.create({
-  model: "llama-3.3-70b-versatile",
-  messages: [{ role: "user", content: summaryPrompt }],
-  max_tokens: 500
-});
+    const summaryCompletion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: summaryPrompt }],
+      max_tokens: 400
+    });
 
-const summary = summaryCompletion.choices[0].message.content.trim();
+    const summary = summaryCompletion.choices[0].message.content.trim();
 
-
+    // Zapis dokumentu w historii
     await ChatMessage.create({
-  chatId: currentChatId,
-  role: "user",
-  type: "document",
-  content: message || "[DOCUMENT]",
-  documentText: text,
-  documentSummary: summary
-});
+      chatId: currentChatId,
+      role: "user",
+      type: "document",
+      content: message || "[DOCUMENT]",
+      documentText: text,
+      documentSummary: summary
+    });
 
-    const prompt = `
-Oto treść dokumentu:
+    // ============================
+    // ODPOWIEDŹ NA PODSTAWIE STRESZCZENIA (NIE PEŁNEGO DOKUMENTU)
+    // ============================
+    const answerPrompt = `
+Oto streszczenie dokumentu:
 
----
-${text}
----
+${summary}
 
 Użytkownik pyta: "${message || "Streszcz dokument"}"
 
-Odpowiedz tylko na podstawie dokumentu.
-    `;
+Odpowiedz tylko na podstawie streszczenia.
+`;
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }]
+      messages: [{ role: "user", content: answerPrompt }],
+      max_tokens: 500
     });
 
     const reply = completion.choices[0].message.content.trim();
@@ -554,6 +557,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
