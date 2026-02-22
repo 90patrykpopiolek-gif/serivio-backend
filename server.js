@@ -437,10 +437,10 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
     const text = await extractTextFromDocument(req.file);
 
     // ============================
-    // GENEROWANIE STRESZCZENIA (10 zdań)
+    // GENEROWANIE STRESZCZENIA (30 zdań)
     // ============================
     const summaryPrompt = `
-Streść ten dokument w maksymalnie 20 zdaniach.
+Streść ten dokument w maksymalnie 30 zdaniach.
 Skup się tylko na najważniejszych informacjach, pomijając szczegóły techniczne.
 
 ---
@@ -557,6 +557,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
