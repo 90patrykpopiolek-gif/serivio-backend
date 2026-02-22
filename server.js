@@ -59,7 +59,7 @@ function generateTitleFromMessage(message) {
 }
 
 // =======================================
-// POST /chat — zapis do MongoDB + dokumenty
+// POST /chat — z RAG na ostatnim dokumencie
 // =======================================
 app.post("/chat", async (req, res) => {
   try {
@@ -111,10 +111,10 @@ app.post("/chat", async (req, res) => {
     }));
 
     // ============================
-    // PRIORYTET OSTATNIEJ WIADOMOŚCI
+    // 1) PRIORYTET OSTATNIEJ WIADOMOŚCI (image / document / text)
     // ============================
 
-    // 1. Jeśli ostatnia wiadomość to ZDJĘCIE → używamy opisu zdjęcia
+    // Jeśli ostatnia wiadomość to ZDJĘCIE → używamy opisu zdjęcia
     if (lastMsg.type === "image") {
       const imgDesc = await ChatMessage.findOne({
         chatId: currentChatId,
@@ -129,17 +129,74 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // 2. Jeśli ostatnia wiadomość to DOKUMENT → używamy streszczenia dokumentu
+    // Jeśli ostatnia wiadomość to DOKUMENT → używamy streszczenia dokumentu
     if (lastMsg.type === "document") {
       if (lastMsg.documentSummary) {
         messagesForModel.push({
           role: "user",
-          content: `Streszczenie dokumentu:\n${lastMsg.documentSummary.slice(0, 800)}`
+          content: `Streszczenie dokumentu:\n${lastMsg.documentSummary.slice(0, 1200)}`
         });
       }
     }
 
-    // 3. Jeśli ostatnia wiadomość to TEKST → nic nie dodajemy (normalny czat)
+    // ============================
+    // 2) RAG NA OSTATNIM DOKUMENCIE (gdy użytkownik pisze tekst)
+    // ============================
+    if (lastMsg.type === "text") {
+      // znajdź ostatni dokument w tym czacie
+      const lastDoc = await ChatMessage.findOne({
+        chatId: currentChatId,
+        type: "document"
+      }).sort({ createdAt: -1 });
+
+      if (lastDoc && lastDoc.documentText) {
+        const docText = lastDoc.documentText;
+
+        // proste dzielenie na chunki po ~800 znaków
+        const chunkSize = 800;
+        const chunks = [];
+        for (let i = 0; i < docText.length; i += chunkSize) {
+          chunks.push(docText.slice(i, i + chunkSize));
+        }
+
+        // proste „dopasowanie” po słowach z pytania
+        const question = message.toLowerCase();
+        const questionWords = question
+          .split(/\s+/)
+          .filter(w => w.length > 3); // ignoruj bardzo krótkie słowa
+
+        const scoredChunks = chunks.map(chunk => {
+          const chunkLower = chunk.toLowerCase();
+          let score = 0;
+          for (const w of questionWords) {
+            if (chunkLower.includes(w)) score++;
+          }
+          return { chunk, score };
+        });
+
+        // wybierz top 3 najlepiej pasujące fragmenty
+        const topChunks = scoredChunks
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+          .filter(c => c.score > 0); // tylko jeśli coś pasuje
+
+        if (topChunks.length > 0) {
+          const ragContext = topChunks
+            .map((c, idx) => `Fragment ${idx + 1}:\n${c.chunk}`)
+            .join("\n\n");
+
+          messagesForModel.push({
+            role: "user",
+            content:
+              `Poniżej masz fragmenty dokumentu, które mogą być istotne ` +
+              `dla odpowiedzi na pytanie użytkownika:\n\n` +
+              `${ragContext}\n\n` +
+              `Odpowiedz na pytanie użytkownika wyłącznie na podstawie powyższych fragmentów ` +
+              `oraz wcześniejszego kontekstu rozmowy.`
+          });
+        }
+      }
+    }
 
     // ============================
     // WYSYŁAMY DO MODELU
@@ -557,6 +614,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
