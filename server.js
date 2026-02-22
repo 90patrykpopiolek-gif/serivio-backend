@@ -92,67 +92,64 @@ app.post("/chat", async (req, res) => {
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
-      content: message
+      content: message,
+      type: "text"
     });
 
-    // Pobierz historię do modelu
+    // Pobierz ostatnią wiadomość (to ona decyduje o kontekście)
+    const lastMsg = await ChatMessage.findOne({ chatId: currentChatId })
+      .sort({ createdAt: -1 });
+
+    // Pobierz historię (max 5)
     const history = await ChatMessage.find({ chatId: currentChatId })
-  .sort({ createdAt: 1 })
-  .limit(10); // zmniejszamy historię, żeby nie przekraczać limitu tokenów
+      .sort({ createdAt: 1 })
+      .limit(5);
 
-const messagesForModel = history.map(m => ({
-  role: m.role,
-  content: typeof m.content === "string" ? m.content : ""
-}));
+    let messagesForModel = history.map(m => ({
+      role: m.role,
+      content: m.content
+    }));
 
-    // DOŁĄCZANIE OSTATNIEGO OPISU ZDJĘCIA
-const lastImageDescription = await ChatMessage.findOne({
-  chatId: currentChatId,
-  type: "image_description"
-}).sort({ createdAt: -1 });
+    // ============================
+    // PRIORYTET OSTATNIEJ WIADOMOŚCI
+    // ============================
 
-if (lastImageDescription && lastImageDescription.imageDescription) {
-  messagesForModel.push({
-    role: "user",
-    content:
-      `Opis ostatniego zdjęcia użytkownika:\n` +
-      `${lastImageDescription.imageDescription}\n\n` +
-      `Użytkownik teraz pyta: ${message}`
-  });
-}
+    // 1. Jeśli ostatnia wiadomość to ZDJĘCIE → używamy opisu zdjęcia
+    if (lastMsg.type === "image") {
+      const imgDesc = await ChatMessage.findOne({
+        chatId: currentChatId,
+        type: "image_description"
+      }).sort({ createdAt: -1 });
 
-    // AUTOMATYCZNE DOŁĄCZANIE AKTYWNEGO DOKUMENTU
-    const session = await ChatSession.findOne({ chatId: currentChatId });
-
-    if (session?.activeFileId) {
-      const file = await File.findOne({ fileId: session.activeFileId });
-
-      if (file) {
-        // Szukamy ostatniej wiadomości typu "document"
-        const docMessage = await ChatMessage.findOne({
-  chatId: currentChatId,
-  type: "document"
-}).sort({ createdAt: -1 });
-
-        if (docMessage && docMessage.documentSummary) {
-  messagesForModel.push({
-    role: "user",
-    content:
-      `Oto streszczenie dokumentu:\n\n` +
-      `${docMessage.documentSummary}\n\n` +
-      `Użytkownik pyta: ${message}`
-  });
-}
-        // UWAGA: brak obsługi obrazu w /chat — zdjęcia obsługuje /upload
+      if (imgDesc?.imageDescription) {
+        messagesForModel.push({
+          role: "user",
+          content: `Opis zdjęcia:\n${imgDesc.imageDescription.slice(0, 500)}`
+        });
       }
     }
 
-    // Wyślij do modelu tekstowego
-const completion = await groq.chat.completions.create({
-  model: "llama-3.3-70b-versatile",
-  messages: messagesForModel,
-  max_tokens: 800
-});
+    // 2. Jeśli ostatnia wiadomość to DOKUMENT → używamy streszczenia dokumentu
+    if (lastMsg.type === "document") {
+      if (lastMsg.documentSummary) {
+        messagesForModel.push({
+          role: "user",
+          content: `Streszczenie dokumentu:\n${lastMsg.documentSummary.slice(0, 800)}`
+        });
+      }
+    }
+
+    // 3. Jeśli ostatnia wiadomość to TEKST → nic nie dodajemy (normalny czat)
+
+    // ============================
+    // WYSYŁAMY DO MODELU
+    // ============================
+
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: messagesForModel,
+      max_tokens: 800
+    });
 
     const reply = completion.choices[0].message.content;
 
@@ -160,7 +157,8 @@ const completion = await groq.chat.completions.create({
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
-      content: reply
+      content: reply,
+      type: "text"
     });
 
     res.json({
@@ -556,6 +554,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
