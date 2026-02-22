@@ -447,7 +447,7 @@ await ChatMessage.create({
 });
 
 // =======================================
-// POST /upload-document — analiza PDF/DOCX/TXT (OPTYMALIZOWANE)
+// POST /upload-document — analiza PDF/DOCX/TXT (BEZ STRESZCZENIA)
 // =======================================
 app.post("/upload-document", upload.single("file"), async (req, res) => {
   try {
@@ -493,53 +493,32 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
     // Wyciąganie tekstu
     const text = await extractTextFromDocument(req.file);
 
-    // ============================
-    // GENEROWANIE STRESZCZENIA (30 zdań)
-    // ============================
-    const summaryPrompt = `
-Streść ten dokument w maksymalnie 30 zdaniach.
-Skup się tylko na najważniejszych informacjach, pomijając szczegóły techniczne.
-
----
-${text}
----
-`;
-
-    const summaryCompletion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: summaryPrompt }],
-      max_tokens: 400
-    });
-
-    const summary = summaryCompletion.choices[0].message.content.trim();
-
     // Zapis dokumentu w historii
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
       type: "document",
       content: message || "[DOCUMENT]",
-      documentText: text,
-      documentSummary: summary
+      documentText: text
     });
 
     // ============================
-    // ODPOWIEDŹ NA PODSTAWIE STRESZCZENIA (NIE PEŁNEGO DOKUMENTU)
+    // ODPOWIEDŹ NA PODSTAWIE PEŁNEGO TEKSTU
     // ============================
-    const answerPrompt = `
-Oto streszczenie dokumentu:
+    const prompt = `
+Użytkownik przesłał dokument. Oto jego treść:
 
-${summary}
+${text}
 
-Użytkownik pyta: "${message || "Streszcz dokument"}"
+Użytkownik pyta: "${message || "Opisz dokument"}"
 
-Odpowiedz tylko na podstawie streszczenia.
+Odpowiedz na podstawie treści dokumentu.
 `;
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: answerPrompt }],
-      max_tokens: 500
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 600
     });
 
     const reply = completion.choices[0].message.content.trim();
@@ -614,6 +593,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
