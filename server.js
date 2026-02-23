@@ -411,7 +411,7 @@ await ChatSession.updateOne(
           role: "user",
           content: [
             { type: "text", text: promptText },
-            { type: "input_image", image: base64Image }
+            { type: "image_url", image_url: { url: dataUrl } }
           ]
         }
       ],
@@ -593,6 +593,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
