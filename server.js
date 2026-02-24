@@ -5,9 +5,13 @@ const mongoose = require("mongoose");
 const Groq = require("groq-sdk");
 const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
-const File = require("./models/File"); // używane tylko dla dokumentów
 const multer = require("multer");
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50 MB
+  }
+});
 const pdfParse = require("pdf-parse");
 const { Document } = require("docx");
 const fs = require("fs");
@@ -22,7 +26,10 @@ mongoose
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+
+// pozwalamy na duże pliki (zdjęcia, PDF, DOCX)
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
@@ -138,22 +145,8 @@ app.post("/reset", async (req, res) => {
   await ChatSession.deleteMany({ userId });
   await ChatMessage.deleteMany({ userId });
 
-  // dokumenty nadal są usuwane
-  const userFiles = await File.find({ userId });
-
-  for (const f of userFiles) {
-    try {
-      if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-    } catch (err) {
-      console.error("Błąd usuwania pliku:", err);
-    }
-  }
-
-  await File.deleteMany({ userId });
-
   res.json({ status: "reset" });
 });
-
 
 // =======================================
 // POST /deleteChat — usuwa czat (bez zdjęć)
@@ -168,25 +161,12 @@ app.post("/deleteChat", async (req, res) => {
     await ChatSession.deleteOne({ userId, chatId });
     await ChatMessage.deleteMany({ chatId });
 
-    const files = await File.find({ chatId });
-
-    for (const f of files) {
-      try {
-        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-      } catch (err) {
-        console.error("Błąd usuwania pliku:", err);
-      }
-    }
-
-    await File.deleteMany({ chatId });
-
     res.json({ status: "ok" });
   } catch (err) {
     console.error("Delete chat error:", err);
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
-
 
 // =======================================
 // POST /upload — analiza zdjęcia (Vision) BEZ zapisu na dysku
@@ -280,9 +260,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-
 // =======================================
-// POST /upload-document — dokumenty (zapis na dysku zostaje)
+// POST /upload-document — dokumenty 
 // =======================================
 app.post("/upload-document", upload.single("file"), async (req, res) => {
   try {
@@ -309,23 +288,10 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       );
     }
 
-    const fileId = Date.now().toString();
-    const filePath = path.join(__dirname, "uploads", fileId);
-    fs.writeFileSync(filePath, req.file.buffer);
-
-    await File.create({
-      fileId,
-      chatId: currentChatId,
-      path: filePath
-    });
-
-    await ChatSession.updateOne(
-      { chatId: currentChatId },
-      { activeFileId: fileId }
-    );
-
+    //  WYCIĄGAMY TEKST Z DOKUMENTU (PDF/DOCX/TXT)
     const text = await extractTextFromDocument(req.file);
 
+    //  ZAPISUJEMY WIADOMOŚĆ UŻYTKOWNIKA (treść dokumentu)
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
@@ -334,6 +300,7 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       documentText: text
     });
 
+    //  PROMPT DO AI
     const prompt = `
 Użytkownik przesłał dokument. Oto jego treść:
 
@@ -352,6 +319,7 @@ Odpowiedz na podstawie treści dokumentu.
 
     const reply = completion.choices[0].message.content.trim();
 
+    //  ZAPISUJEMY ODPOWIEDŹ AI
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
@@ -366,7 +334,6 @@ Odpowiedz na podstawie treści dokumentu.
     res.status(500).json({ error: "Błąd serwera podczas analizy dokumentu" });
   }
 });
-
 
 // =======================================
 // WYCIĄGANIE TEKSTU Z DOKUMENTÓW
@@ -395,7 +362,6 @@ function extractFromTxt(file) {
   return file.buffer.toString("utf8");
 }
 
-
 // =======================================
 // START SERWERA
 // =======================================
@@ -404,6 +370,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
