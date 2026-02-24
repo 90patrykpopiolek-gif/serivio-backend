@@ -224,12 +224,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [
         {
-          role: "user",
-          content: [
-            { type: "text", text: promptText },
-            { type: "image_url", image_url: { url: dataUrl } }
-          ]
-        }
+  role: "user",
+  content: [
+    { type: "text", text: promptText },
+    { type: "input_image", image: base64Image }
+  ]
+}
       ],
       max_tokens: 600,
       temperature: 0.4
@@ -370,6 +370,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
