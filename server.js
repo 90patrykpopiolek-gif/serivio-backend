@@ -6,19 +6,17 @@ const Groq = require("groq-sdk");
 const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
 const multer = require("multer");
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 50 * 1024 * 1024 // 50 MB
-  }
-});
 const pdfParse = require("pdf-parse");
 const { Document } = require("docx");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 dotenv.config();
 
+// ===============================
+// MongoDB
+// ===============================
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("Połączono z MongoDB"))
@@ -26,17 +24,31 @@ mongoose
 
 const app = express();
 app.use(cors());
-
-// pozwalamy na duże pliki (zdjęcia, PDF, DOCX)
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// ===============================
+// Folder na zdjęcia (Render filesystem)
+// ===============================
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR);
+}
+
+// statyczne serwowanie plików
+app.use("/uploads", express.static(UPLOAD_DIR));
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 } // 50 MB
+});
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
 
-// =======================================
+// ===============================
 // POST /chat — czat tekstowy
-// =======================================
+// ===============================
 app.post("/chat", async (req, res) => {
   try {
     const { userId, message, chatId } = req.body;
@@ -103,9 +115,9 @@ app.post("/chat", async (req, res) => {
 });
 
 
-// =======================================
+// ===============================
 // GET /history
-// =======================================
+// ===============================
 app.get("/history", async (req, res) => {
   const chatId = req.query.chatId;
   if (!chatId) return res.status(400).json({ error: "Brak chatId" });
@@ -115,9 +127,9 @@ app.get("/history", async (req, res) => {
 });
 
 
-// =======================================
+// ===============================
 // GET /chats
-// =======================================
+// ===============================
 app.get("/chats", async (req, res) => {
   const userId = req.query.userId;
   if (!userId) return res.status(400).json({ error: "Brak userId" });
@@ -134,9 +146,9 @@ app.get("/chats", async (req, res) => {
 });
 
 
-// =======================================
-// POST /reset — usuwa czaty (bez plików zdjęć)
-// =======================================
+// ===============================
+// POST /reset
+// ===============================
 app.post("/reset", async (req, res) => {
   const { userId } = req.body;
 
@@ -148,9 +160,10 @@ app.post("/reset", async (req, res) => {
   res.json({ status: "reset" });
 });
 
-// =======================================
-// POST /deleteChat — usuwa czat (bez zdjęć)
-// =======================================
+
+// ===============================
+// POST /deleteChat
+// ===============================
 app.post("/deleteChat", async (req, res) => {
   const { userId, chatId } = req.body;
 
@@ -168,10 +181,12 @@ app.post("/deleteChat", async (req, res) => {
   }
 });
 
-// =======================================
-// POST /upload — analiza zdjęcia (Vision) BEZ zapisu na dysku
-// =======================================
+
+// ===============================
+// POST /upload — Vision (URL, nie base64)
+// ===============================
 app.post("/upload", upload.single("file"), async (req, res) => {
+  let filePath;
   try {
     const { userId, chatId, message } = req.body;
 
@@ -196,40 +211,38 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       );
     }
 
-    // Konwersja zdjęcia do base64
-    const base64Image = req.file.buffer.toString("base64");
-    const mimeType = req.file.mimetype || "image/jpeg";
-    const dataUrl = `data:${mimeType};base64,${base64Image}`;
+    // zapis pliku na serwerze (Render)
+    const fileName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.jpg`;
+    filePath = path.join(UPLOAD_DIR, fileName);
+    fs.writeFileSync(filePath, req.file.buffer);
 
-    // Zapis zdjęcia jako wiadomość
+    const imageUrl = `https://serivio-backend.onrender.com/uploads/${fileName}`;
+
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
       type: "image",
-      content: message && message.trim() !== "" ? message : "[IMAGE]",
-      imageData: base64Image
+      content: message?.trim() ? message : "[IMAGE]",
+      imageUrl
     });
 
-    let promptText = "";
-
-    if (!message || message.trim() === "") {
-      promptText =
-        "Użytkownik wysłał zdjęcie bez tekstu. Opisz bardzo szczegółowo wszystko, co widzisz.";
-    } else {
-      promptText =
-        `Użytkownik napisał: "${message}". Najpierw opisz zdjęcie, potem odpowiedz.`;
-    }
+    const promptText = message?.trim()
+      ? `Użytkownik napisał: "${message}". Najpierw opisz zdjęcie szczegółowo w jezyku urzytkownika, potem odpowiedz na pytanie lub komentarz.`
+      : "Użytkownik wysłał zdjęcie bez tekstu. Opisz bardzo szczegółowo wszystko, co widzisz na zdjęciu w jezyku urzytkownika (kolory, obiekty, tekst, scena, emocje itp.).";
 
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [
         {
-  role: "user",
-  content: [
-    { type: "text", text: promptText },
-    { type: "input_image", image: base64Image }
-  ]
-}
+          role: "user",
+          content: [
+            { type: "text", text: promptText },
+            {
+              type: "image_url",
+              image_url: { url: imageUrl }
+            }
+          ]
+        }
       ],
       max_tokens: 600,
       temperature: 0.4
@@ -257,12 +270,25 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   } catch (err) {
     console.error("❌ Błąd uploadu:", err);
     res.status(500).json({ error: "Błąd serwera podczas uploadu" });
+  } finally {
+    // sprzątanie pliku po chwili (żeby Groq zdążył pobrać)
+    if (filePath && fs.existsSync(filePath)) {
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(filePath);
+          console.log("Usunięto plik:", filePath);
+        } catch (e) {
+          console.warn("Nie udało się usunąć pliku:", e);
+        }
+      }, 15000);
+    }
   }
 });
 
-// =======================================
-// POST /upload-document — dokumenty 
-// =======================================
+
+// ===============================
+// POST /upload-document — dokumenty
+// ===============================
 app.post("/upload-document", upload.single("file"), async (req, res) => {
   try {
     const { userId, chatId, message } = req.body;
@@ -288,10 +314,8 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       );
     }
 
-    //  WYCIĄGAMY TEKST Z DOKUMENTU (PDF/DOCX/TXT)
     const text = await extractTextFromDocument(req.file);
 
-    //  ZAPISUJEMY WIADOMOŚĆ UŻYTKOWNIKA (treść dokumentu)
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
@@ -300,7 +324,6 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       documentText: text
     });
 
-    //  PROMPT DO AI
     const prompt = `
 Użytkownik przesłał dokument. Oto jego treść:
 
@@ -319,7 +342,6 @@ Odpowiedz na podstawie treści dokumentu.
 
     const reply = completion.choices[0].message.content.trim();
 
-    //  ZAPISUJEMY ODPOWIEDŹ AI
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
@@ -335,9 +357,10 @@ Odpowiedz na podstawie treści dokumentu.
   }
 });
 
-// =======================================
-// WYCIĄGANIE TEKSTU Z DOKUMENTÓW
-// =======================================
+
+// ===============================
+// Ekstrakcja tekstu z dokumentów
+// ===============================
 async function extractTextFromDocument(file) {
   const name = file.originalname.toLowerCase();
 
@@ -362,14 +385,17 @@ function extractFromTxt(file) {
   return file.buffer.toString("utf8");
 }
 
-// =======================================
-// START SERWERA
-// =======================================
+
+// ===============================
+// Start serwera
+// ===============================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
+
 
 
 
