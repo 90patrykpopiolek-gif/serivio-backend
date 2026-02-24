@@ -5,16 +5,13 @@ const mongoose = require("mongoose");
 const Groq = require("groq-sdk");
 const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
-const File = require("./models/File");
+const File = require("./models/File"); // używane tylko dla dokumentów
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
 const pdfParse = require("pdf-parse");
 const { Document } = require("docx");
 const fs = require("fs");
 const path = require("path");
-
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
 dotenv.config();
 
@@ -29,37 +26,9 @@ app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
-// =======================================
-// STRUKTURA: WIELE CZATÓW
-// =======================================
-//
-// chatsById = {
-//   "chatId123": {
-//      userId: "user123",
-//      title: "Plan treningowy",
-//      lastUsedAt: "2026-02-13T11:22:33.000Z",
-//      messages: [ { role, content }, ... ]
-//   },
-//   ...
-// }
 
 // =======================================
-// GENEROWANIE TYTUŁU CZATU
-// =======================================
-function generateTitleFromMessage(message) {
-    if (!message) return "Nowa rozmowa";
-
-    let title = message.split("\n")[0].trim();
-
-    if (title.length > 40) {
-        title = title.slice(0, 37) + "...";
-    }
-
-    return title.charAt(0).toUpperCase() + title.slice(1);
-}
-
-// =======================================
-// POST /chat — z RAG na ostatnim dokumencie
+// POST /chat — czat tekstowy
 // =======================================
 app.post("/chat", async (req, res) => {
   try {
@@ -71,7 +40,6 @@ app.post("/chat", async (req, res) => {
 
     let currentChatId = chatId;
 
-    // NOWY CZAT
     if (!currentChatId) {
       currentChatId = Date.now().toString();
 
@@ -88,7 +56,6 @@ app.post("/chat", async (req, res) => {
       );
     }
 
-    // Zapisz wiadomość użytkownika
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
@@ -96,111 +63,14 @@ app.post("/chat", async (req, res) => {
       type: "text"
     });
 
-    // Pobierz ostatnią wiadomość (to ona decyduje o kontekście)
-    const lastMsg = await ChatMessage.findOne({ chatId: currentChatId })
-      .sort({ createdAt: -1 });
-
-    // Pobierz historię (max 5)
     const history = await ChatMessage.find({ chatId: currentChatId })
       .sort({ createdAt: 1 })
       .limit(5);
 
-    let messagesForModel = history.map(m => ({
+    const messagesForModel = history.map(m => ({
       role: m.role,
       content: m.content
     }));
-
-    // ============================
-    // 1) PRIORYTET OSTATNIEJ WIADOMOŚCI (image / document / text)
-    // ============================
-
-    // Jeśli ostatnia wiadomość to ZDJĘCIE → używamy opisu zdjęcia
-    if (lastMsg.type === "image") {
-      const imgDesc = await ChatMessage.findOne({
-        chatId: currentChatId,
-        type: "image_description"
-      }).sort({ createdAt: -1 });
-
-      if (imgDesc?.imageDescription) {
-        messagesForModel.push({
-          role: "user",
-          content: `Opis zdjęcia:\n${imgDesc.imageDescription.slice(0, 500)}`
-        });
-      }
-    }
-
-    // Jeśli ostatnia wiadomość to DOKUMENT → używamy streszczenia dokumentu
-    if (lastMsg.type === "document") {
-      if (lastMsg.documentSummary) {
-        messagesForModel.push({
-          role: "user",
-          content: `Streszczenie dokumentu:\n${lastMsg.documentSummary.slice(0, 1200)}`
-        });
-      }
-    }
-
-    // ============================
-    // 2) RAG NA OSTATNIM DOKUMENCIE (gdy użytkownik pisze tekst)
-    // ============================
-    if (lastMsg.type === "text") {
-      // znajdź ostatni dokument w tym czacie
-      const lastDoc = await ChatMessage.findOne({
-        chatId: currentChatId,
-        type: "document"
-      }).sort({ createdAt: -1 });
-
-      if (lastDoc && lastDoc.documentText) {
-        const docText = lastDoc.documentText;
-
-        // proste dzielenie na chunki po ~800 znaków
-        const chunkSize = 800;
-        const chunks = [];
-        for (let i = 0; i < docText.length; i += chunkSize) {
-          chunks.push(docText.slice(i, i + chunkSize));
-        }
-
-        // proste „dopasowanie” po słowach z pytania
-        const question = message.toLowerCase();
-        const questionWords = question
-          .split(/\s+/)
-          .filter(w => w.length > 3); // ignoruj bardzo krótkie słowa
-
-        const scoredChunks = chunks.map(chunk => {
-          const chunkLower = chunk.toLowerCase();
-          let score = 0;
-          for (const w of questionWords) {
-            if (chunkLower.includes(w)) score++;
-          }
-          return { chunk, score };
-        });
-
-        // wybierz top 3 najlepiej pasujące fragmenty
-        const topChunks = scoredChunks
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 3)
-          .filter(c => c.score > 0); // tylko jeśli coś pasuje
-
-        if (topChunks.length > 0) {
-          const ragContext = topChunks
-            .map((c, idx) => `Fragment ${idx + 1}:\n${c.chunk}`)
-            .join("\n\n");
-
-          messagesForModel.push({
-            role: "user",
-            content:
-              `Poniżej masz fragmenty dokumentu, które mogą być istotne ` +
-              `dla odpowiedzi na pytanie użytkownika:\n\n` +
-              `${ragContext}\n\n` +
-              `Odpowiedz na pytanie użytkownika wyłącznie na podstawie powyższych fragmentów ` +
-              `oraz wcześniejszego kontekstu rozmowy.`
-          });
-        }
-      }
-    }
-
-    // ============================
-    // WYSYŁAMY DO MODELU
-    // ============================
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -210,7 +80,6 @@ app.post("/chat", async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
-    // Zapisz odpowiedź AI
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
@@ -218,10 +87,7 @@ app.post("/chat", async (req, res) => {
       type: "text"
     });
 
-    res.json({
-      reply,
-      chatId: currentChatId
-    });
+    res.json({ reply, chatId: currentChatId });
 
   } catch (error) {
     console.error("Chat error:", error);
@@ -229,25 +95,24 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+
 // =======================================
-// GET /history — pobieranie historii z MongoDB
+// GET /history
 // =======================================
 app.get("/history", async (req, res) => {
   const chatId = req.query.chatId;
-
   if (!chatId) return res.status(400).json({ error: "Brak chatId" });
 
   const history = await ChatMessage.find({ chatId }).sort({ createdAt: 1 });
-
   res.json({ history });
 });
 
+
 // =======================================
-// GET /chats — lista czatów z MongoDB (poprawiona)
+// GET /chats
 // =======================================
 app.get("/chats", async (req, res) => {
   const userId = req.query.userId;
-
   if (!userId) return res.status(400).json({ error: "Brak userId" });
 
   const sessions = await ChatSession.find({ userId }).sort({ lastUsedAt: -1 });
@@ -261,8 +126,9 @@ app.get("/chats", async (req, res) => {
   );
 });
 
+
 // =======================================
-// POST /reset — usuwa czaty użytkownika
+// POST /reset — usuwa czaty (bez plików zdjęć)
 // =======================================
 app.post("/reset", async (req, res) => {
   const { userId } = req.body;
@@ -272,24 +138,25 @@ app.post("/reset", async (req, res) => {
   await ChatSession.deleteMany({ userId });
   await ChatMessage.deleteMany({ userId });
 
-  //  USUWANIE WSZYSTKICH PLIKÓW UŻYTKOWNIKA
-const userFiles = await File.find({ userId });
+  // dokumenty nadal są usuwane
+  const userFiles = await File.find({ userId });
 
-for (const f of userFiles) {
-  try {
-    if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-  } catch (err) {
-    console.error("Błąd usuwania pliku:", err);
+  for (const f of userFiles) {
+    try {
+      if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+    } catch (err) {
+      console.error("Błąd usuwania pliku:", err);
+    }
   }
-}
 
-await File.deleteMany({ userId });
+  await File.deleteMany({ userId });
 
   res.json({ status: "reset" });
 });
 
+
 // =======================================
-// POST /deleteChat — usuwa jeden czat
+// POST /deleteChat — usuwa czat (bez zdjęć)
 // =======================================
 app.post("/deleteChat", async (req, res) => {
   const { userId, chatId } = req.body;
@@ -298,24 +165,20 @@ app.post("/deleteChat", async (req, res) => {
   if (!chatId) return res.status(400).json({ error: "Brak chatId" });
 
   try {
-    // Usuń sesję czatu
     await ChatSession.deleteOne({ userId, chatId });
-
-    // Usuń wszystkie wiadomości z tego czatu
     await ChatMessage.deleteMany({ chatId });
 
-    //  USUWANIE WSZYSTKICH PLIKÓW POWIĄZANYCH Z CZATEM
-const files = await File.find({ chatId });
+    const files = await File.find({ chatId });
 
-for (const f of files) {
-  try {
-    if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-  } catch (err) {
-    console.error("Błąd usuwania pliku:", err);
-  }
-}
+    for (const f of files) {
+      try {
+        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+      } catch (err) {
+        console.error("Błąd usuwania pliku:", err);
+      }
+    }
 
-await File.deleteMany({ chatId });
+    await File.deleteMany({ chatId });
 
     res.json({ status: "ok" });
   } catch (err) {
@@ -324,8 +187,9 @@ await File.deleteMany({ chatId });
   }
 });
 
+
 // =======================================
-// POST /upload — analiza zdjęcia (Vision)
+// POST /upload — analiza zdjęcia (Vision) BEZ zapisu na dysku
 // =======================================
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
@@ -336,7 +200,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     let currentChatId = chatId;
 
-    // Jeśli nie ma czatu — tworzymy nowy
     if (!currentChatId) {
       currentChatId = Date.now().toString();
 
@@ -353,24 +216,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       );
     }
 
-    //  ZAPIS PLIKU NA DYSKU
-const fileId = Date.now().toString();
-const filePath = path.join(UPLOAD_DIR, fileId);
-fs.writeFileSync(filePath, req.file.buffer);
-
-//  ZAPIS METADANYCH W MONGO
-await File.create({
-  fileId,
-  chatId: currentChatId,
-  path: filePath
-});
-
-//  USTAWIENIE AKTYWNEGO PLIKU
-await ChatSession.updateOne(
-  { chatId: currentChatId },
-  { activeFileId: fileId }
-);
-
     // Konwersja zdjęcia do base64
     const base64Image = req.file.buffer.toString("base64");
     const mimeType = req.file.mimetype || "image/jpeg";
@@ -385,25 +230,16 @@ await ChatSession.updateOne(
       imageData: base64Image
     });
 
-    //  Budujemy prompt zależnie od tego, czy użytkownik napisał tekst
     let promptText = "";
 
     if (!message || message.trim() === "") {
-  promptText = 
-    "Użytkownik wysłał zdjęcie bez tekstu. " +
-    "Opisz bardzo szczegółowo wszystko, co widzisz na zdjęciu. " +
-    "Uwzględnij wszystkie obiekty, zwierzęta, kolory, tło, meble, małe detale, " +
-    "położenie elementów, tekstury i wszystko, co może być istotne.";
-} else {
-  promptText =
-    `Użytkownik napisał: "${message}". ` +
-    "Najpierw opisz bardzo szczegółowo wszystko, co widzisz na zdjęciu. " +
-    "Uwzględnij obiekty, zwierzęta, kolory, tło, meble, małe detale, " +
-    "położenie elementów i tekstury. " +
-    "Następnie odpowiedz na pytanie użytkownika w sposób rozmowny i pomocny.";
-}
+      promptText =
+        "Użytkownik wysłał zdjęcie bez tekstu. Opisz bardzo szczegółowo wszystko, co widzisz.";
+    } else {
+      promptText =
+        `Użytkownik napisał: "${message}". Najpierw opisz zdjęcie, potem odpowiedz.`;
+    }
 
-    // Wysyłamy do modelu
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [
@@ -421,7 +257,6 @@ await ChatSession.updateOne(
 
     const reply = completion.choices[0].message.content.trim();
 
-    // Zapis odpowiedzi AI
     await ChatMessage.create({
       chatId: currentChatId,
       role: "assistant",
@@ -429,14 +264,13 @@ await ChatSession.updateOne(
       content: reply
     });
 
-    // Zapis opisu zdjęcia jako osobna wiadomość systemowa
-await ChatMessage.create({
-  chatId: currentChatId,
-  role: "system",
-  type: "image_description",
-  content: "[IMAGE_DESCRIPTION]",
-  imageDescription: reply
-});
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "system",
+      type: "image_description",
+      content: "[IMAGE_DESCRIPTION]",
+      imageDescription: reply
+    });
 
     res.json({ reply, chatId: currentChatId });
 
@@ -446,8 +280,9 @@ await ChatMessage.create({
   }
 });
 
+
 // =======================================
-// POST /upload-document — analiza PDF/DOCX/TXT (BEZ STRESZCZENIA)
+// POST /upload-document — dokumenty (zapis na dysku zostaje)
 // =======================================
 app.post("/upload-document", upload.single("file"), async (req, res) => {
   try {
@@ -474,9 +309,8 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       );
     }
 
-    // Zapis pliku
     const fileId = Date.now().toString();
-    const filePath = path.join(UPLOAD_DIR, fileId);
+    const filePath = path.join(__dirname, "uploads", fileId);
     fs.writeFileSync(filePath, req.file.buffer);
 
     await File.create({
@@ -490,10 +324,8 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       { activeFileId: fileId }
     );
 
-    // Wyciąganie tekstu
     const text = await extractTextFromDocument(req.file);
 
-    // Zapis dokumentu w historii
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
@@ -502,9 +334,6 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       documentText: text
     });
 
-    // ============================
-    // ODPOWIEDŹ NA PODSTAWIE PEŁNEGO TEKSTU
-    // ============================
     const prompt = `
 Użytkownik przesłał dokument. Oto jego treść:
 
@@ -538,6 +367,7 @@ Odpowiedz na podstawie treści dokumentu.
   }
 });
 
+
 // =======================================
 // WYCIĄGANIE TEKSTU Z DOKUMENTÓW
 // =======================================
@@ -565,34 +395,17 @@ function extractFromTxt(file) {
   return file.buffer.toString("utf8");
 }
 
-//  AUTOMATYCZNE USUWANIE PLIKÓW STARSZYCH NIŻ 24H
-setInterval(async () => {
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24h
 
-  const oldFiles = await File.find({
-    createdAt: { $lt: new Date(cutoff) }
-  });
-
-  for (const f of oldFiles) {
-    try {
-      if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-    } catch (err) {
-      console.error("Błąd usuwania starego pliku:", err);
-    }
-  }
-
-  await File.deleteMany({
-    createdAt: { $lt: new Date(cutoff) }
-  });
-
-}, 60 * 60 * 1000); // sprawdzaj co godzinę
-
-
+// =======================================
+// START SERWERA
+// =======================================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("Serwer działa na porcie " + PORT);
+  console.log("Serwer działa na porcie " + PORT);
 });
+
+
 
 
 
