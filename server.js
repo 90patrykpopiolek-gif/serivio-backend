@@ -11,8 +11,13 @@ const { Document } = require("docx");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { fal } = require("@fal-ai/client");
 
 dotenv.config();
+
+fal.config({
+  credentials: process.env.FAL_KEY,
+});
 
 // ===============================
 // MongoDB
@@ -385,6 +390,28 @@ function extractFromTxt(file) {
   return file.buffer.toString("utf8");
 }
 
+// ===============================
+// POST /generate-image — generowanie obrazów fal.ai
+// ===============================
+app.post("/generate-image", async (req, res) => {
+  try {
+    const { prompt } = req.body;
+
+    if (!prompt || prompt.trim() === "") {
+      return res.status(400).json({ error: "Brak promptu" });
+    }
+
+    const result = await fal.subscribe("fal-ai/flux/dev", {
+      input: { prompt },
+    });
+
+    res.json(result);
+
+  } catch (err) {
+    console.error("❌ Błąd generowania obrazu:", err);
+    res.status(500).json({ error: "Błąd generowania obrazu" });
+  }
+});
 
 // ===============================
 // Start serwera
@@ -394,6 +421,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
