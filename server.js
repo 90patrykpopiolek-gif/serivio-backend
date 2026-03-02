@@ -458,6 +458,125 @@ app.post("/generate-image", async (req, res) => {
   }
 });
 
+app.post("/chat-image", upload.single("file"), async (req, res) => {
+  try {
+    const { userId, chatId, message } = req.body;
+    const file = req.file;
+
+    if (!userId) return res.status(400).json({ error: "Brak userId" });
+    if (!file) return res.status(400).json({ error: "Brak pliku!" });
+
+    let currentChatId = chatId;
+    if (!currentChatId) {
+      currentChatId = Date.now().toString();
+      await ChatSession.create({
+        chatId: currentChatId,
+        userId,
+        title: message?.slice(0, 40) || "Rozmowa ze zdjęciem",
+        lastUsedAt: new Date()
+      });
+    } else {
+      await ChatSession.updateOne(
+        { chatId: currentChatId },
+        { lastUsedAt: new Date() }
+      );
+    }
+
+    const fileName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.jpg`;
+    const filePath = path.join(UPLOAD_DIR, fileName);
+    fs.writeFileSync(filePath, file.buffer);
+    const imageUrl = `${process.env.BACKEND_URL || "https://serivio-backend.onrender.com"}/uploads/${fileName}`;
+
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "user",
+      type: "image",
+      content: message?.trim() ? message : "[IMAGE]",
+      imageUrl
+    });
+
+    const visionPrompt = message?.trim()
+      ? `Najpierw bardzo szczegółowo opisz scenę na zdjęciu, potem potraktuj to jako kontekst do polecenia użytkownika: "${message}".`
+      : "Opisz bardzo szczegółowo wszystko, co widzisz na zdjęciu (scena, obiekty, światło, perspektywa).";
+
+    const visionCompletion = await groq.chat.completions.create({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: visionPrompt },
+            { type: "image_url", image_url: { url: imageUrl } }
+          ]
+        }
+      ],
+      max_tokens: 600,
+      temperature: 0.3
+    });
+
+    const sceneDescription = visionCompletion.choices[0].message.content.trim();
+
+    const wantsImage = /obraz|wygeneruj|zrób obraz|grafikę|zdjęcie z|stwórz scenę|zrób scenę/.test(
+      (message || "").toLowerCase()
+    );
+
+    if (!wantsImage) {
+      await ChatMessage.create({
+        chatId: currentChatId,
+        role: "assistant",
+        type: "text",
+        content: sceneDescription
+      });
+
+      return res.json({
+        type: "text",
+        reply: sceneDescription,
+        chatId: currentChatId
+      });
+    }
+
+    const imagePrompt = `
+Scena bazowa:
+${sceneDescription}
+
+Polecenie użytkownika:
+${message || ""}
+
+Stwórz NOWY obraz przedstawiający scenę podobną do opisanej powyżej,
+uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat.
+`;
+
+    const falResult = await fal.subscribe("fal-ai/flux/dev", {
+      input: { prompt: imagePrompt }
+    });
+
+    const generatedImageUrl =
+      falResult?.images?.[0]?.url || falResult?.url || null;
+
+    if (!generatedImageUrl) {
+      return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+    }
+
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "assistant",
+      type: "image",
+      content: "[GENERATED_IMAGE]",
+      imageUrl: generatedImageUrl
+    });
+
+    return res.json({
+      type: "image",
+      imageUrl: generatedImageUrl,
+      chatId: currentChatId
+    });
+
+  } catch (err) {
+    console.error("❌ Błąd /chat-image:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
 // ===============================
 // Start serwera
 // ===============================
@@ -466,6 +585,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
