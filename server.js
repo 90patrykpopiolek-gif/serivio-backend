@@ -3,6 +3,10 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const mongoose = require("mongoose");
 const Groq = require("groq-sdk");
+const { TavilyClient } = require("tavily");
+const tavily = new TavilyClient({
+  apiKey: process.env.TAVILY_API_KEY
+});
 const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
 const multer = require("multer");
@@ -50,9 +54,22 @@ const upload = multer({
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
+const SYSTEM_PROMPT = `
+Jesteś asystentem o nazwie Serivio.
+
+Zasady:
+- Odpowiadasz zawsze w języku użytkownika (automatycznie wykrywasz język).
+- Jeśli pytanie wymaga aktualnych danych (np. polityka, daty, wydarzenia, fakty po 2023), możesz korzystać z wyników wyszukiwania internetowego.
+- Jeśli nie masz danych — mówisz "Nie wiem" lub "Nie mam dostępu do aktualnych danych".
+- Nie powtarzasz zachęt typu "zadaj pytanie".
+- Odpowiadasz konkretnie i bez lania wody.
+- Nie mieszasz języków — trzymasz się języka użytkownika.
+- Jeśli pytanie jest niejasne — prosisz o doprecyzowanie.
+- Nie wymyślasz faktów.
+`;
 
 // ===============================
-// POST /chat — czat tekstowy
+// POST /chat — czat tekstowy (z Tavily + system prompt)
 // ===============================
 app.post("/chat", async (req, res) => {
   try {
@@ -87,19 +104,48 @@ app.post("/chat", async (req, res) => {
       type: "text"
     });
 
+    // Historia — więcej kontekstu
     const history = await ChatMessage.find({ chatId: currentChatId })
       .sort({ createdAt: 1 })
-      .limit(5);
+      .limit(10);
 
-    const messagesForModel = history.map(m => ({
-      role: m.role,
-      content: m.content
-    }));
+    // Czy pytanie wymaga internetu?
+    const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
+      message
+    );
+
+    let searchResults = "";
+    if (needsSearch) {
+      try {
+        const tavilyResponse = await tavily.search(message, { max_results: 5 });
+        searchResults = tavilyResponse.results
+          .map(r => `• ${r.title}: ${r.url}`)
+          .join("\n");
+      } catch (e) {
+        console.error("Tavily error:", e);
+        searchResults = "Brak wyników wyszukiwania.";
+      }
+    }
+
+    const messagesForModel = [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "system",
+        content: searchResults
+          ? `Wyniki wyszukiwania internetowego:\n${searchResults}`
+          : "Brak wyników wyszukiwania."
+      },
+      ...history.map(m => ({
+        role: m.role,
+        content: m.content
+      }))
+    ];
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: messagesForModel,
-      max_tokens: 800
+      max_tokens: 800,
+      temperature: 0.3
     });
 
     const reply = completion.choices[0].message.content;
@@ -118,7 +164,6 @@ app.post("/chat", async (req, res) => {
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
-
 
 // ===============================
 // GET /history
@@ -421,6 +466,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
