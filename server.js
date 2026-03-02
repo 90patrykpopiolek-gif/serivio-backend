@@ -447,10 +447,18 @@ app.post("/generate-image", async (req, res) => {
     }
 
     const result = await fal.subscribe("fal-ai/flux/dev", {
-      input: { prompt },
-    });
+  input: { prompt },
+});
 
-    res.json(result);
+// fal.ai zwraca wynik w result.output
+const imageUrl = result?.output?.images?.[0]?.url;
+
+if (!imageUrl) {
+  console.error("❌ fal.ai nie zwróciło URL obrazu:", result);
+  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+}
+
+res.json({ imageUrl });
 
   } catch (err) {
     console.error("❌ Błąd generowania obrazu:", err);
@@ -550,12 +558,12 @@ uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat
       input: { prompt: imagePrompt }
     });
 
-    const generatedImageUrl =
-      falResult?.images?.[0]?.url || falResult?.url || null;
+    const generatedImageUrl = falResult?.output?.images?.[0]?.url;
 
-    if (!generatedImageUrl) {
-      return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-    }
+if (!generatedImageUrl) {
+  console.error("❌ fal.ai nie zwróciło URL obrazu:", falResult);
+  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+}
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -585,50 +593,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
