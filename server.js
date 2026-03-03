@@ -615,6 +615,26 @@ if (!user) {
 });
 
 // ===============================
+// GET /user/:id — pobieranie kredytów
+// ===============================
+app.get("/user/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    let user = await User.findById(id);
+
+    if (!user) {
+      user = await User.create({ _id: id, credits: 0 });
+    }
+
+    res.json({ credits: user.credits });
+  } catch (err) {
+    console.error("❌ User error:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+// ===============================
 // Start serwera
 // ===============================
 const PORT = process.env.PORT || 3000;
@@ -622,6 +642,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
