@@ -596,9 +596,11 @@ app.get("/admob/reward-callback", async (req, res) => {
     if (!user_id) return res.status(400).send("missing user_id");
 
     // UWAGA: Musisz mieć model User z polem credits
-    const user = await User.findById(user_id);
-    if (!user) return res.status(404).send("user not found");
-
+    let user = await User.findById(user_id);
+if (!user) {
+  user = await User.create({ _id: user_id, credits: 0 });
+}
+    
     const amount = parseInt(reward_amount || "1", 10);
     user.credits = (user.credits || 0) + amount;
     await user.save();
@@ -618,5 +620,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
