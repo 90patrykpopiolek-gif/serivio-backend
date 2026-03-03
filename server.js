@@ -586,6 +586,30 @@ if (!generatedImageUrl) {
 });
 
 // ===============================
+// AdMob — callback nagrody (SSV)
+// ===============================
+app.get("/admob/reward-callback", async (req, res) => {
+  try {
+    const { user_id, reward_amount } = req.query;
+
+    if (!user_id) return res.status(400).send("missing user_id");
+
+    // UWAGA: Musisz mieć model User z polem credits
+    const user = await User.findById(user_id);
+    if (!user) return res.status(404).send("user not found");
+
+    const amount = parseInt(reward_amount || "1", 10);
+    user.credits = (user.credits || 0) + amount;
+    await user.save();
+
+    return res.status(200).send("ok");
+  } catch (err) {
+    console.error("❌ AdMob callback error:", err);
+    return res.status(500).send("error");
+  }
+});
+
+// ===============================
 // Start serwera
 // ===============================
 const PORT = process.env.PORT || 3000;
@@ -593,3 +617,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
