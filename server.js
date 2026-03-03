@@ -593,6 +593,8 @@ app.get("/admob/reward-callback", async (req, res) => {
   try {
     const { user_id, reward_amount } = req.query;
 
+    console.log("AdMob callback query:", req.query);
+
     if (!user_id) return res.status(400).send("missing user_id");
 
     // UWAGA: Musisz mieć model User z polem credits
@@ -620,6 +622,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
