@@ -704,15 +704,15 @@ app.post("/credits/use", async (req, res) => {
     let limitMax = 0;
 
     if (type === "generate") {
-      cost = 2;
+      cost = 25;
       limitField = "limitGenerateUsed";
       limitMax = 2;
     } else if (type === "photo") {
-      cost = 5;
+      cost = 10;
       limitField = "limitPhotoUsed";
       limitMax = 5;
     } else if (type === "document") {
-      cost = 3;
+      cost = 10;
       limitField = "limitDocumentsUsed";
       limitMax = 3;
     } else {
@@ -777,6 +777,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
