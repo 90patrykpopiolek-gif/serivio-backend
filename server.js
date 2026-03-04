@@ -746,30 +746,6 @@ app.post("/credits/use", async (req, res) => {
 });
 
 // ===============================
-// KREDYTY – DODAWANIE (np. reklama)
-// ===============================
-app.post("/credits/add", async (req, res) => {
-  try {
-    const { uid, amount } = req.body;
-
-    if (!uid) return res.status(400).json({ error: "Brak uid" });
-
-    const add = Number(amount);
-    if (!add || add <= 0) return res.status(400).json({ error: "Zła wartość amount" });
-
-    const user = await ensureUser(uid);
-    user.credits += add;
-    await user.save();
-
-    res.json({ status: "ok", credits: user.credits });
-
-  } catch (err) {
-    console.error("❌ credits/add error:", err);
-    res.status(500).json({ error: "Błąd serwera" });
-  }
-});
-
-// ===============================
 // Start serwera
 // ===============================
 const PORT = process.env.PORT || 3000;
@@ -777,6 +753,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
