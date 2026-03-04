@@ -70,6 +70,37 @@ Zasady:
 `;
 
 // ===============================
+// KREDYTY + LIMITY – FUNKCJA
+// ===============================
+async function ensureUser(uid) {
+  let user = await User.findById(uid);
+
+  if (!user) {
+    user = await User.create({
+      _id: uid,
+      credits: 0,
+      limitGenerateUsed: 0,
+      limitPhotoUsed: 0,
+      limitDocumentsUsed: 0,
+      lastLimitsReset: new Date()
+    });
+  }
+
+  const today = new Date().toDateString();
+  const last = user.lastLimitsReset?.toDateString();
+
+  if (today !== last) {
+    user.limitGenerateUsed = 0;
+    user.limitPhotoUsed = 0;
+    user.limitDocumentsUsed = 0;
+    user.lastLimitsReset = new Date();
+    await user.save();
+  }
+
+  return user;
+}
+
+// ===============================
 // POST /chat — czat tekstowy (z Tavily + system prompt)
 // ===============================
 app.post("/chat", async (req, res) => {
@@ -635,6 +666,110 @@ app.get("/user/:id", async (req, res) => {
 });
 
 // ===============================
+// KREDYTY – POBIERANIE
+// ===============================
+app.post("/credits/get", async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.status(400).json({ error: "Brak uid" });
+
+    const user = await ensureUser(uid);
+
+    res.json({
+      credits: user.credits,
+      limitGenerateUsed: user.limitGenerateUsed,
+      limitPhotoUsed: user.limitPhotoUsed,
+      limitDocumentsUsed: user.limitDocumentsUsed
+    });
+  } catch (err) {
+    console.error("❌ credits/get error:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+// ===============================
+// KREDYTY – UŻYCIE FUNKCJI PREMIUM
+// ===============================
+app.post("/credits/use", async (req, res) => {
+  try {
+    const { uid, type } = req.body;
+
+    if (!uid) return res.status(400).json({ error: "Brak uid" });
+    if (!type) return res.status(400).json({ error: "Brak type" });
+
+    const user = await ensureUser(uid);
+
+    let cost = 0;
+    let limitField = "";
+    let limitMax = 0;
+
+    if (type === "generate") {
+      cost = 2;
+      limitField = "limitGenerateUsed";
+      limitMax = 2;
+    } else if (type === "photo") {
+      cost = 5;
+      limitField = "limitPhotoUsed";
+      limitMax = 5;
+    } else if (type === "document") {
+      cost = 3;
+      limitField = "limitDocumentsUsed";
+      limitMax = 3;
+    } else {
+      return res.status(400).json({ error: "Nieznany typ" });
+    }
+
+    if (user[limitField] >= limitMax) {
+      return res.status(403).json({ error: "Limit dzienny wyczerpany" });
+    }
+
+    if (user.credits < cost) {
+      return res.status(403).json({ error: "Brak kredytów" });
+    }
+
+    user.credits -= cost;
+    user[limitField] += 1;
+    await user.save();
+
+    res.json({
+      status: "ok",
+      credits: user.credits,
+      limitGenerateUsed: user.limitGenerateUsed,
+      limitPhotoUsed: user.limitPhotoUsed,
+      limitDocumentsUsed: user.limitDocumentsUsed
+    });
+
+  } catch (err) {
+    console.error("❌ credits/use error:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+// ===============================
+// KREDYTY – DODAWANIE (np. reklama)
+// ===============================
+app.post("/credits/add", async (req, res) => {
+  try {
+    const { uid, amount } = req.body;
+
+    if (!uid) return res.status(400).json({ error: "Brak uid" });
+
+    const add = Number(amount);
+    if (!add || add <= 0) return res.status(400).json({ error: "Zła wartość amount" });
+
+    const user = await ensureUser(uid);
+    user.credits += add;
+    await user.save();
+
+    res.json({ status: "ok", credits: user.credits });
+
+  } catch (err) {
+    console.error("❌ credits/add error:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+// ===============================
 // Start serwera
 // ===============================
 const PORT = process.env.PORT || 3000;
@@ -642,6 +777,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
