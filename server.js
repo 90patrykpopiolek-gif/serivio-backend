@@ -719,13 +719,15 @@ app.post("/credits/use", async (req, res) => {
       return res.status(400).json({ error: "Nieznany typ" });
     }
 
-    if (user[limitField] >= limitMax) {
-      return res.status(403).json({ error: "Limit dzienny wyczerpany" });
-    }
+    // najpierw kredyty
+if (user.credits < cost) {
+  return res.status(403).json({ error: "Brak kredytów" });
+}
 
-    if (user.credits < cost) {
-      return res.status(403).json({ error: "Brak kredytów" });
-    }
+// dopiero potem limit
+if (user[limitField] >= limitMax) {
+  return res.status(403).json({ error: "Limit dzienny wyczerpany" });
+}
 
     user.credits -= cost;
     user[limitField] += 1;
@@ -753,6 +755,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
