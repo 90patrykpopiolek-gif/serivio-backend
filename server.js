@@ -183,11 +183,11 @@ app.post("/chat", async (req, res) => {
     const reply = completion.choices[0].message.content;
 
     await ChatMessage.create({
-      chatId: currentChatId,
-      role: "assistant",
-      content: reply,
-      type: "text"
-    });
+  chatId: currentChatId,
+  role: "assistant",
+  content: reply || "[EMPTY_REPLY]",   // ← zabezpieczenie
+  type: "text"
+});
 
     res.json({ reply, chatId: currentChatId });
 
@@ -333,11 +333,11 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const reply = completion.choices[0].message.content.trim();
 
     await ChatMessage.create({
-      chatId: currentChatId,
-      role: "assistant",
-      type: "text",
-      content: reply
-    });
+  chatId: currentChatId,
+  role: "assistant",
+  type: "text",
+  content: reply || "[EMPTY_REPLY]"
+});
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -425,11 +425,11 @@ Odpowiedz na podstawie treści dokumentu.
     const reply = completion.choices[0].message.content.trim();
 
     await ChatMessage.create({
-      chatId: currentChatId,
-      role: "assistant",
-      type: "text",
-      content: reply
-    });
+  chatId: currentChatId,
+  role: "assistant",
+  type: "text",
+  content: reply || "[EMPTY_REPLY]"
+});
 
     res.json({ reply, chatId: currentChatId });
 
@@ -764,6 +764,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
