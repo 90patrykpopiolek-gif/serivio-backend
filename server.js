@@ -182,6 +182,9 @@ app.post("/chat", async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
+    console.log("RAW MODEL RESPONSE:", JSON.stringify(completion, null, 2));
+console.log("EXTRACTED reply:", reply);
+
     await ChatMessage.create({
   chatId: currentChatId,
   role: "assistant",
@@ -764,6 +767,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
