@@ -565,7 +565,7 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
         chatId: currentChatId,
         role: "assistant",
         type: "text",
-        content: sceneDescription
+        content: sceneDescription || "[EMPTY_REPLY]"
       });
 
       return res.json({
@@ -764,6 +764,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
