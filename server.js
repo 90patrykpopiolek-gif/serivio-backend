@@ -719,27 +719,36 @@ app.post("/credits/use", async (req, res) => {
       return res.status(400).json({ error: "Nieznany typ" });
     }
 
-    // najpierw kredyty
+    // 1. Najpierw darmowy limit
+if (user[limitField] < limitMax) {
+  user[limitField] += 1;
+  await user.save();
+
+  return res.json({
+    status: "ok",
+    credits: user.credits,
+    limitGenerateUsed: user.limitGenerateUsed,
+    limitPhotoUsed: user.limitPhotoUsed,
+    limitDocumentsUsed: user.limitDocumentsUsed
+  });
+}
+
+// 2. Limit wyczerpany → sprawdzamy kredyty
 if (user.credits < cost) {
   return res.status(403).json({ error: "Brak kredytów" });
 }
 
-// dopiero potem limit
-if (user[limitField] >= limitMax) {
-  return res.status(403).json({ error: "Limit dzienny wyczerpany" });
-}
+// 3. Zużywamy kredyt
+user.credits -= cost;
+await user.save();
 
-    user.credits -= cost;
-    user[limitField] += 1;
-    await user.save();
-
-    res.json({
-      status: "ok",
-      credits: user.credits,
-      limitGenerateUsed: user.limitGenerateUsed,
-      limitPhotoUsed: user.limitPhotoUsed,
-      limitDocumentsUsed: user.limitDocumentsUsed
-    });
+return res.json({
+  status: "ok",
+  credits: user.credits,
+  limitGenerateUsed: user.limitGenerateUsed,
+  limitPhotoUsed: user.limitPhotoUsed,
+  limitDocumentsUsed: user.limitDocumentsUsed
+});
 
   } catch (err) {
     console.error("❌ credits/use error:", err);
@@ -755,6 +764,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
