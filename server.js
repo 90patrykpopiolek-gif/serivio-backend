@@ -136,10 +136,11 @@ app.post("/chat", async (req, res) => {
       type: "text"
     });
 
-    // Historia — więcej kontekstu
     const history = await ChatMessage.find({ chatId: currentChatId })
-      .sort({ createdAt: 1 })
-      .limit(10);
+  .sort({ createdAt: 1 })
+  .limit(50);
+
+const trimmedHistory = history.slice(-8);
 
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
@@ -160,24 +161,28 @@ app.post("/chat", async (req, res) => {
     }
 
     const messagesForModel = [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
+  { role: "system", content: SYSTEM_PROMPT },
+
+  // historia (ostatnie 8 wiadomości)
+  ...trimmedHistory.map(m => ({
+    role: m.role,
+    content: m.content
+  })),
+
+  // wyniki wyszukiwania — tylko jeśli istnieją
+  ...(searchResults
+    ? [{
         role: "system",
-        content: searchResults
-          ? `Wyniki wyszukiwania internetowego:\n${searchResults}`
-          : "Brak wyników wyszukiwania."
-      },
-      ...history.map(m => ({
-        role: m.role,
-        content: m.content
-      }))
-    ];
+        content: `Wyniki wyszukiwania internetowego:\n${searchResults}`
+      }]
+    : [])
+];
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: messagesForModel,
       max_tokens: 800,
-      temperature: 0.3
+      temperature: 0.4
     });
 
     const reply = completion.choices[0].message.content;
@@ -767,6 +772,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
