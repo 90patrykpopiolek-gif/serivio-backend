@@ -179,7 +179,7 @@ const trimmedHistory = history.slice(-8);
 ];
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: messagesForModel,
       max_tokens: 800,
       temperature: 0.4
@@ -425,7 +425,7 @@ Odpowiedz na podstawie treści dokumentu.
 `;
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 600
     });
@@ -772,6 +772,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
