@@ -60,6 +60,7 @@ Jesteś asystentem o nazwie Serivio.
 
 Zasady:
 - Odpowiadasz zawsze w języku użytkownika (automatycznie wykrywasz język).
+- Jeśli w wiadomości znajduje się obraz (image_url), możesz go analizować i odnosić się do jego treści. Jeśli obraz nie został dostarczony w tej wiadomości, nie zakładaj, że masz do niego dostęp.
 - Jeśli pytanie wymaga aktualnych danych (np. polityka, daty, wydarzenia, fakty po 2023), możesz korzystać z wyników wyszukiwania internetowego.
 - Jeśli nie masz danych — mówisz "Nie wiem" lub "Nie mam dostępu do aktualnych danych".
 - Nie powtarzasz zachęt typu "zadaj pytanie".
@@ -140,7 +141,20 @@ app.post("/chat", async (req, res) => {
   .sort({ createdAt: 1 })
   .limit(50);
 
-const trimmedHistory = history.slice(-8);
+// ostatnie 10 wiadomości tekstowych
+const textHistory = history
+  .filter(m => m.type === "text")
+  .slice(-10);
+
+// ostatnie 5 wiadomości związanych z obrazem
+const imageHistory = history
+  .filter(m => m.type === "image" || m.type === "image_description")
+  .slice(-5);
+
+// łączymy obie listy i sortujemy po czasie
+const trimmedHistory = [...textHistory, ...imageHistory].sort(
+  (a, b) => a.createdAt - b.createdAt
+);
 
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
@@ -163,13 +177,33 @@ const trimmedHistory = history.slice(-8);
     const messagesForModel = [
   { role: "system", content: SYSTEM_PROMPT },
 
-  // historia (ostatnie 8 wiadomości)
-  ...trimmedHistory.map(m => ({
-    role: m.role,
-    content: m.content
-  })),
+  ...trimmedHistory.map(m => {
+    // Jeśli to obraz – dołącz go ponownie jako obraz
+    if (m.type === "image") {
+      return {
+        role: "user",
+        content: [
+          { type: "text", text: m.content || "Użytkownik wysłał obraz." },
+          { type: "image_url", image_url: { url: m.imageUrl } }
+        ]
+      };
+    }
 
-  // wyniki wyszukiwania — tylko jeśli istnieją
+    // Jeśli to opis obrazu
+    if (m.type === "image_description") {
+      return {
+        role: "system",
+        content: `Opis obrazu: ${m.imageDescription || m.content}`
+      };
+    }
+
+    // Normalne wiadomości tekstowe
+    return {
+      role: m.role,
+      content: m.content
+    };
+  }),
+
   ...(searchResults
     ? [{
         role: "system",
