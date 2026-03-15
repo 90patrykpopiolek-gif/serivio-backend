@@ -7,7 +7,7 @@ const ChatMessageSchema = new mongoose.Schema(
 
     type: { type: String, default: "text" },
     content: { type: String, required: true },
-    imageData: { type: String, default: null },
+    imageUrl: { type: String, default: null },
     documentText: { type: String, default: null },
     documentSummary: { type: String, default: null },
 
