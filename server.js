@@ -143,7 +143,13 @@ app.post("/chat", async (req, res) => {
 
 // ostatnie 10 wiadomości tekstowych
 const textHistory = history
-  .filter(m => m.type === "text")
+  .filter(
+    m =>
+      m.type === "text" &&
+      m.content &&
+      m.content.trim() !== "" &&
+      m.content !== "[EMPTY_REPLY]"
+  )
   .slice(-10);
 
 // ostatnie 5 wiadomości związanych z obrazem
@@ -219,15 +225,23 @@ const trimmedHistory = [...textHistory, ...imageHistory].sort(
       temperature: 0.4
     });
 
-    const reply = completion.choices[0].message.content;
+    const reply = (completion.choices[0].message.content || "").trim();
 
     console.log("RAW MODEL RESPONSE:", JSON.stringify(completion, null, 2));
 console.log("EXTRACTED reply:", reply);
 
+    // jeśli model zwróci pustą odpowiedź – NIE zapisujemy jej do historii
+if (!reply) {
+  return res.json({
+    reply: "Przepraszam, nie zrozumiałem. Możesz powtórzyć?",
+    chatId: currentChatId
+  });
+}
+    
     await ChatMessage.create({
   chatId: currentChatId,
   role: "assistant",
-  content: reply || "[EMPTY_REPLY]",   // ← zabezpieczenie
+  content: reply,
   type: "text"
 });
 
@@ -372,24 +386,31 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       temperature: 0.4
     });
 
-    const reply = completion.choices[0].message.content.trim();
+    const reply = (completion.choices[0].message.content || "").trim();
 
-    await ChatMessage.create({
+if (!reply) {
+  return res.json({
+    reply: "Przepraszam, nie udało mi się nic sensownego odczytać z tego zdjęcia. Możesz spróbować inaczej to opisać?",
+    chatId: currentChatId
+  });
+}
+
+await ChatMessage.create({
   chatId: currentChatId,
   role: "assistant",
   type: "text",
-  content: reply || "[EMPTY_REPLY]"
+  content: reply
 });
 
-    await ChatMessage.create({
-      chatId: currentChatId,
-      role: "system",
-      type: "image_description",
-      content: "[IMAGE_DESCRIPTION]",
-      imageDescription: reply
-    });
+await ChatMessage.create({
+  chatId: currentChatId,
+  role: "system",
+  type: "image_description",
+  content: "[IMAGE_DESCRIPTION]",
+  imageDescription: reply
+});
 
-    res.json({ reply, chatId: currentChatId });
+res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
     console.error("❌ Błąd uploadu:", err);
@@ -464,16 +485,24 @@ Odpowiedz na podstawie treści dokumentu.
       max_tokens: 600
     });
 
-    const reply = completion.choices[0].message.content.trim();
+    const reply = (completion.choices[0].message.content || "").trim();
 
-    await ChatMessage.create({
+// jeśli model zwróci pustą odpowiedź – NIE zapisujemy jej do historii
+if (!reply) {
+  return res.json({
+    reply: "Nie udało mi się nic sensownego wyciągnąć z tego dokumentu. Spróbuj zadać pytanie inaczej.",
+    chatId: currentChatId
+  });
+}
+
+await ChatMessage.create({
   chatId: currentChatId,
   role: "assistant",
   type: "text",
-  content: reply || "[EMPTY_REPLY]"
+  content: reply
 });
 
-    res.json({ reply, chatId: currentChatId });
+res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
     console.error("❌ Błąd dokumentu:", err);
@@ -596,26 +625,36 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       temperature: 0.3
     });
 
-    const sceneDescription = visionCompletion.choices[0].message.content.trim();
+    const sceneDescription = (visionCompletion.choices[0].message.content || "").trim();
 
     const wantsImage = /obraz|wygeneruj|zrób obraz|grafikę|zdjęcie z|stwórz scenę|zrób scenę/.test(
       (message || "").toLowerCase()
     );
 
     if (!wantsImage) {
-      await ChatMessage.create({
-        chatId: currentChatId,
-        role: "assistant",
-        type: "text",
-        content: sceneDescription || "[EMPTY_REPLY]"
-      });
+  const cleanScene = (sceneDescription || "").trim();
 
-      return res.json({
-        type: "text",
-        reply: sceneDescription,
-        chatId: currentChatId
-      });
-    }
+  if (!cleanScene) {
+    return res.json({
+      type: "text",
+      reply: "Nie potrafię dobrze opisać tej sceny. Spróbuj napisać, o co dokładnie Ci chodzi.",
+      chatId: currentChatId
+    });
+  }
+
+  await ChatMessage.create({
+    chatId: currentChatId,
+    role: "assistant",
+    type: "text",
+    content: cleanScene
+  });
+
+  return res.json({
+    type: "text",
+    reply: cleanScene,
+    chatId: currentChatId
+  });
+}
 
     const imagePrompt = `
 Scena bazowa:
