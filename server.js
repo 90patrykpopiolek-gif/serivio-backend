@@ -157,10 +157,14 @@ const imageHistory = history
   .filter(m => m.type === "image" || m.type === "image_description")
   .slice(-5);
 
-// łączymy obie listy i sortujemy po czasie
-const trimmedHistory = [...textHistory, ...imageHistory].sort(
-  (a, b) => a.createdAt - b.createdAt
-);
+// ostatnie 3 dokumenty
+const documentHistory = history
+  .filter(m => m.type === "document_text")
+  .slice(-3);
+
+// łączymy wszystkie listy i sortujemy po czasie
+const trimmedHistory = [...textHistory, ...imageHistory, ...documentHistory]
+  .sort((a, b) => a.createdAt - b.createdAt);
 
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
@@ -203,6 +207,14 @@ const trimmedHistory = [...textHistory, ...imageHistory].sort(
       };
     }
 
+    // Jeśli to dokument – dołącz treść dokumentu
+if (m.type === "document_text") {
+  return {
+    role: "system",
+    content: `Treść dokumentu:\n${m.documentText}`
+  };
+}
+
     // Normalne wiadomości tekstowe
     return {
       role: m.role,
@@ -217,6 +229,14 @@ const trimmedHistory = [...textHistory, ...imageHistory].sort(
       }]
     : [])
 ];
+    // TWARDY LIMIT ROZMIARU PROMPTU — ZABEZPIECZENIE PRZED ZAPĘTLENIEM
+let promptString = JSON.stringify(messagesForModel);
+
+// jeśli prompt jest za duży, usuwamy najstarsze wiadomości (po system prompt)
+while (promptString.length > 12000 && messagesForModel.length > 2) {
+  messagesForModel.splice(1, 1); // usuwa najstarszą wiadomość, system zostaje
+  promptString = JSON.stringify(messagesForModel);
+}  
 
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -354,7 +374,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     filePath = path.join(UPLOAD_DIR, fileName);
     fs.writeFileSync(filePath, req.file.buffer);
 
-    const imageUrl = `https://serivio-backend.onrender.com/uploads/${fileName}`;
+    const imageUrl = `${process.env.BACKEND_URL || "https://serivio-backend.onrender.com"}/uploads/${fileName}`;
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -502,6 +522,14 @@ await ChatMessage.create({
   content: reply
 });
 
+    await ChatMessage.create({
+  chatId: currentChatId,
+  role: "system",
+  type: "document_text",
+  content: "[DOCUMENT_TEXT]",
+  documentText: text
+});
+    
 res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
@@ -509,7 +537,6 @@ res.json({ reply, chatId: currentChatId });
     res.status(500).json({ error: "Błąd serwera podczas analizy dokumentu" });
   }
 });
-
 
 // ===============================
 // Ekstrakcja tekstu z dokumentów
