@@ -183,6 +183,31 @@ const documentHistory = history
 const trimmedHistory = [...textHistory, ...imageHistory, ...documentHistory]
   .sort((a, b) => a.createdAt - b.createdAt);
 
+    // ===============================
+// WYKRYWANIE PYTANIA O DOKUMENT (embedding probe)
+// ===============================
+const DocumentChunk = require("./models/DocumentChunk");
+
+// 1) embedding pytania
+const questionEmbedding = await generateEmbedding(message);
+
+// 2) szybki probe-search
+const probe = await DocumentChunk.aggregate([
+  {
+    $vectorSearch: {
+      index: "default",
+      path: "embedding",
+      queryVector: questionEmbedding,
+      numCandidates: 5,
+      limit: 1
+    }
+  },
+  { $match: { chatId: currentChatId } }
+]);
+
+const similarity = probe?.[0]?.score || 0;
+const isDocumentQuestion = similarity > 0.75; // próg możesz dostroić
+
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
       message
@@ -201,51 +226,100 @@ const trimmedHistory = [...textHistory, ...imageHistory, ...documentHistory]
       }
     }
 
-    const messagesForModel = [
-  { role: "system", content: SYSTEM_PROMPT },
+    let messagesForModel;
 
-  ...trimmedHistory.map(m => {
-    // Jeśli to obraz – dołącz go ponownie jako obraz
-    if (m.type === "image") {
-      return {
-        role: "user",
-        content: [
-          { type: "text", text: m.content || "Użytkownik wysłał obraz." },
-          { type: "image_url", image_url: { url: m.imageUrl } }
-        ]
-      };
-    }
+// 1) PYTANIE NIE DOTYCZY DOKUMENTU → ZWYKŁY CZAT
+if (!isDocumentQuestion) {
+  messagesForModel = [
+    { role: "system", content: SYSTEM_PROMPT },
 
-    // Jeśli to opis obrazu
-    if (m.type === "image_description") {
-      return {
-        role: "system",
-        content: `Opis obrazu: ${m.imageDescription || m.content}`
-      };
-    }
+    ...trimmedHistory.map(m => {
+      if (m.type === "image") {
+        return {
+          role: "user",
+          content: [
+            { type: "text", text: m.content || "Użytkownik wysłał obraz." },
+            { type: "image_url", image_url: { url: m.imageUrl } }
+          ]
+        };
+      }
 
-    // Jeśli to dokument – dołącz treść dokumentu
-if (m.type === "document_text") {
-  return {
-    role: "system",
-    content: `Treść dokumentu:\n${m.documentText}`
-  };
+      if (m.type === "image_description") {
+        return {
+          role: "system",
+          content: `Opis obrazu: ${m.imageDescription || m.content}`
+        };
+      }
+
+      return { role: m.role, content: m.content };
+    }),
+
+    ...(searchResults
+      ? [{
+          role: "system",
+          content: `Wyniki wyszukiwania internetowego:\n${searchResults}`
+        }]
+      : []),
+
+    { role: "user", content: message }
+  ];
 }
 
-    // Normalne wiadomości tekstowe
-    return {
-      role: m.role,
-      content: m.content
-    };
-  }),
+// 2) PYTANIE DOTYCZY DOKUMENTU → PEŁNY RAG
+else {
+  const chunks = await DocumentChunk.aggregate([
+    {
+      $vectorSearch: {
+        index: "default",
+        path: "embedding",
+        queryVector: questionEmbedding,
+        numCandidates: 100,
+        limit: 5
+      }
+    },
+    { $match: { chatId: currentChatId } }
+  ]);
 
-  ...(searchResults
-    ? [{
-        role: "system",
-        content: `Wyniki wyszukiwania internetowego:\n${searchResults}`
-      }]
-    : [])
-];
+  const contextText = chunks.map(c => c.text).join("\n\n");
+
+  messagesForModel = [
+    {
+      role: "system",
+      content: `
+Jesteś Serivio. Odpowiadasz na podstawie dokumentu.
+Używaj wyłącznie informacji z kontekstu poniżej.
+Jeśli czegoś nie ma w kontekście — powiedz, że nie wiesz.
+
+Kontekst dokumentu:
+${contextText}
+`
+    },
+
+    ...trimmedHistory.map(m => {
+      if (m.type === "image") {
+        return {
+          role: "user",
+          content: [
+            { type: "text", text: m.content || "Użytkownik wysłał obraz." },
+            { type: "image_url", image_url: { url: m.imageUrl } }
+          ]
+        };
+      }
+
+      if (m.type === "image_description") {
+        return {
+          role: "system",
+          content: `Opis obrazu: ${m.imageDescription || m.content}`
+        };
+      }
+
+      return { role: m.role, content: m.content };
+    }),
+
+    { role: "user", content: message }
+  ];
+}
+
     // TWARDY LIMIT ROZMIARU PROMPTU — ZABEZPIECZENIE PRZED ZAPĘTLENIEM
 let promptString = JSON.stringify(messagesForModel);
 
