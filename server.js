@@ -487,18 +487,24 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
 
     const text = await extractTextFromDocument(req.file);
 
+    // Limit długości dokumentu (np. 10k znaków)
+    let limitedText = text;
+    if (limitedText.length > 10000) {
+      limitedText = limitedText.slice(0, 10000) + "\n\n[... Dokument skrócony ...]";
+    }
+
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
       type: "document",
       content: message || "[DOCUMENT]",
-      documentText: text
+      documentText: limitedText   
     });
 
     const prompt = `
 Użytkownik przesłał dokument. Oto jego treść:
 
-${text}
+${limitedText}
 
 Użytkownik pyta: "${message || "Opisz dokument"}"
 
@@ -513,30 +519,29 @@ Odpowiedz na podstawie treści dokumentu.
 
     const reply = (completion.choices[0].message.content || "").trim();
 
-// jeśli model zwróci pustą odpowiedź – NIE zapisujemy jej do historii
-if (!reply) {
-  return res.json({
-    reply: "Nie udało mi się nic sensownego wyciągnąć z tego dokumentu. Spróbuj zadać pytanie inaczej.",
-    chatId: currentChatId
-  });
-}
-
-await ChatMessage.create({
-  chatId: currentChatId,
-  role: "assistant",
-  type: "text",
-  content: reply
-});
+    if (!reply) {
+      return res.json({
+        reply: "Nie udało mi się nic sensownego wyciągnąć z tego dokumentu. Spróbuj zadać pytanie inaczej.",
+        chatId: currentChatId
+      });
+    }
 
     await ChatMessage.create({
-  chatId: currentChatId,
-  role: "system",
-  type: "document_text",
-  content: "[DOCUMENT_TEXT]",
-  documentText: text
-});
-    
-res.json({ reply, chatId: currentChatId });
+      chatId: currentChatId,
+      role: "assistant",
+      type: "text",
+      content: reply
+    });
+
+    await ChatMessage.create({
+      chatId: currentChatId,
+      role: "system",
+      type: "document_text",
+      content: "[DOCUMENT_TEXT]",
+      documentText: limitedText   
+    });
+
+    res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
     console.error("❌ Błąd dokumentu:", err);
