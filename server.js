@@ -487,6 +487,25 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
 
     const text = await extractTextFromDocument(req.file);
 
+    const DocumentChunk = require("./models/DocumentChunk");
+
+// 1. Chunkowanie dokumentu
+const chunks = chunkText(text, 800);
+
+// 2. Usuwamy stare fragmenty dokumentów z tego czatu
+await DocumentChunk.deleteMany({ chatId: currentChatId });
+
+// 3. Generujemy embeddingi i zapisujemy do MongoDB
+for (const chunk of chunks) {
+  const embedding = await generateEmbedding(chunk);
+
+  await DocumentChunk.create({
+    chatId: currentChatId,
+    text: chunk,
+    embedding
+  });
+}
+
     // Limit długości dokumentu (np. 10k znaków)
     let limitedText = text;
     if (limitedText.length > 10000) {
@@ -560,6 +579,14 @@ async function extractTextFromDocument(file) {
   if (name.endsWith(".txt")) return extractFromTxt(file);
 
   return "Nieobsługiwany format pliku.";
+}
+
+function chunkText(text, size = 800) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += size) {
+    chunks.push(text.slice(i, i + size));
+  }
+  return chunks;
 }
 
 async function extractFromPdf(file) {
@@ -871,6 +898,67 @@ return res.json({
 
   } catch (err) {
     console.error("❌ credits/use error:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+// ===============================
+// POST /ask-document — RAG (wyszukiwanie wektorowe)
+// ===============================
+app.post("/ask-document", async (req, res) => {
+  try {
+    const { chatId, question } = req.body;
+
+    if (!chatId) return res.status(400).json({ error: "Brak chatId" });
+    if (!question) return res.status(400).json({ error: "Brak pytania" });
+
+    const DocumentChunk = require("./models/DocumentChunk");
+
+    // 1. embedding pytania
+    const questionEmbedding = await generateEmbedding(question);
+
+    // 2. vector search
+    const results = await mongoose.connection.db
+      .collection("documentchunks") // nazwa kolekcji w MongoDB
+      .aggregate([
+        {
+          $vectorSearch: {
+            index: "default",
+            path: "embedding",
+            queryVector: questionEmbedding,
+            numCandidates: 100,
+            limit: 5
+          }
+        }
+      ])
+      .toArray();
+
+    const context = results.map(r => r.text).join("\n\n---\n\n");
+
+    const prompt = `
+Odpowiedz na pytanie użytkownika na podstawie dokumentu.
+
+Pytanie:
+${question}
+
+Najbardziej pasujące fragmenty dokumentu:
+${context}
+
+Jeśli dokument nie zawiera odpowiedzi, powiedz "Nie znalazłem odpowiedzi w dokumencie".
+`;
+
+    const completion = await groq.chat.completions.create({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 600
+    });
+
+    const reply = completion.choices[0].message.content.trim();
+
+    res.json({ reply });
+
+  } catch (err) {
+    console.error("❌ Błąd /ask-document:", err);
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
