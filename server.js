@@ -312,12 +312,18 @@ app.post("/reset", async (req, res) => {
 
   if (!userId) return res.status(400).json({ error: "Brak userId" });
 
+  // pobieramy wszystkie czaty użytkownika
+  const sessions = await ChatSession.find({ userId });
+  const chatIds = sessions.map(s => s.chatId);
+
+  // usuwamy sesje
   await ChatSession.deleteMany({ userId });
-  await ChatMessage.deleteMany({ userId });
+
+  // usuwamy wiadomości powiązane z tymi sesjami
+  await ChatMessage.deleteMany({ chatId: { $in: chatIds } });
 
   res.json({ status: "reset" });
 });
-
 
 // ===============================
 // POST /deleteChat
