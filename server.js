@@ -55,6 +55,15 @@ const upload = multer({
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
+async function generateEmbedding(text) {
+  const response = await groq.embeddings.create({
+    model: "nomic-embed-text-v1.5",
+    input: text
+  });
+
+  return response.data[0].embedding;
+}
+
 const SYSTEM_PROMPT = `
 Jesteś asystentem o nazwie Serivio.
 
