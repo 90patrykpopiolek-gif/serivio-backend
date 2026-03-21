@@ -57,7 +57,7 @@ const groq = new Groq({ apiKey: process.env.API_KEY });
 
 async function generateEmbedding(text) {
   const response = await groq.embeddings.create({
-    model: "nomic-embed-text-v1.5",
+    model: "nomic-embed-text",
     input: text
   });
 
