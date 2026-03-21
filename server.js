@@ -56,12 +56,20 @@ const upload = multer({
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
 async function generateEmbedding(text) {
-  const response = await groq.embeddings.create({
-    model: "nomic-embed-text",
-    input: text
+  const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "BAAI/bge-m3",
+      input: text
+    })
   });
 
-  return response.data[0].embedding;
+  const data = await response.json();
+  return data.data[0].embedding;
 }
 
 const SYSTEM_PROMPT = `
