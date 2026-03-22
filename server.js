@@ -220,8 +220,12 @@ const probe = await DocumentChunk.aggregate([
   }
 ]);
 
-const similarity = probe?.[0]?.score || 0;
-let isDocumentQuestion = true;
+const similarity = probe?.[0]?.score ?? 0;
+
+// na testy możesz to logować:
+console.log("SIMILARITY:", similarity);
+
+let isDocumentQuestion = similarity > 0.15;
 
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
@@ -283,64 +287,91 @@ if (!isDocumentQuestion) {
 // 2) PYTANIE DOTYCZY DOKUMENTU → PEŁNY RAG
 else {
   const chunks = await DocumentChunk.aggregate([
-  {
-    $vectorSearch: {
-      index: "default",
-      path: "embedding",
-      queryVector: questionEmbedding,
-      numCandidates: 100,
-      limit: 5,
-      filter: { chatId: currentChatId }   // <── DODAJ TO
+    {
+      $vectorSearch: {
+        index: "default",
+        path: "embedding",
+        queryVector: questionEmbedding,
+        numCandidates: 100,
+        limit: 5,
+        filter: { chatId: currentChatId }
+      }
     }
-  }
-]);
+  ]);
 
   const contextText = chunks.map(c => c.text).join("\n\n");
 
-  messagesForModel = [
-    {
-      role: "system",
-      content: `
-Jesteś Serivio. Odpowiadasz na podstawie dokumentu.
-Używaj wyłącznie informacji z kontekstu poniżej.
-Jeśli czegoś nie ma w kontekście — powiedz, że nie wiesz.
+  // jeśli nie ma kontekstu → fallback do zwykłego czatu
+  if (!contextText || contextText.trim().length < 10) {
+    console.log("Brak kontekstu dokumentu – fallback");
+    messagesForModel = [
+      { role: "system", content: SYSTEM_PROMPT },
 
-Kontekst dokumentu:
-${contextText}
-`
-    },
+      ...trimmedHistory.map(m => {
+        if (m.type === "image") {
+          return {
+            role: "user",
+            content: [
+              { type: "text", text: m.content || "Użytkownik wysłał obraz." },
+              { type: "image_url", image_url: { url: m.imageUrl } }
+            ]
+          };
+        }
 
-    ...trimmedHistory.map(m => {
-      if (m.type === "image") {
-        return {
-          role: "user",
-          content: [
-            { type: "text", text: m.content || "Użytkownik wysłał obraz." },
-            { type: "image_url", image_url: { url: m.imageUrl } }
-          ]
-        };
-      }
+        if (m.type === "image_description") {
+          return {
+            role: "system",
+            content: `Opis obrazu: ${m.imageDescription || m.content}`
+          };
+        }
 
-      if (m.type === "image_description") {
-        return {
-          role: "system",
-          content: `Opis obrazu: ${m.imageDescription || m.content}`
-        };
-      }
+        return { role: m.role, content: m.content };
+      }),
 
-      return { role: m.role, content: m.content };
-    }),
+      { role: "user", content: message }
+    ];
+  } else {
+    // PEŁNY RAG — KONTEKST NA KOŃCU
+    messagesForModel = [
+      { role: "system", content: SYSTEM_PROMPT },
 
-    { role: "user", content: message }
-  ];
+      ...trimmedHistory.map(m => {
+        if (m.type === "image") {
+          return {
+            role: "user",
+            content: [
+              { type: "text", text: m.content || "Użytkownik wysłał obraz." },
+              { type: "image_url", image_url: { url: m.imageUrl } }
+            ]
+          };
+        }
+
+        if (m.type === "image_description") {
+          return {
+            role: "system",
+            content: `Opis obrazu: ${m.imageDescription || m.content}`
+          };
+        }
+
+        return { role: m.role, content: m.content };
+      }),
+
+      {
+        role: "system",
+        content: `Kontekst dokumentu:\n${contextText}`
+      },
+
+      { role: "user", content: message }
+    ];
+  }
 }
 
     // TWARDY LIMIT ROZMIARU PROMPTU — ZABEZPIECZENIE PRZED ZAPĘTLENIEM
 let promptString = JSON.stringify(messagesForModel);
 
-// jeśli prompt jest za duży, usuwamy najstarsze wiadomości (po system prompt)
-while (promptString.length > 20000 && messagesForModel.length > 2) {
-  messagesForModel.splice(1, 1); // usuwa najstarszą wiadomość, system zostaje
+// jeśli prompt jest za duży, usuwamy najstarsze wiadomości z historii
+while (promptString.length > 20000 && messagesForModel.length > 4) {
+  messagesForModel.splice(1, 1);
   promptString = JSON.stringify(messagesForModel);
 }  
 
@@ -1034,12 +1065,13 @@ app.post("/ask-document", async (req, res) => {
       .aggregate([
         {
           $vectorSearch: {
-            index: "default",
-            path: "embedding",
-            queryVector: questionEmbedding,
-            numCandidates: 100,
-            limit: 5
-          }
+  index: "default",
+  path: "embedding",
+  queryVector: questionEmbedding,
+  numCandidates: 100,
+  limit: 5,
+  filter: { chatId }   // <── to jest kluczowe
+}
         }
       ])
       .toArray();
