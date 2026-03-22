@@ -24,6 +24,23 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
+async function getEmbedding(text) {
+  const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "cohere/embed-multilingual-v3.0",
+      input: text
+    })
+  });
+
+  const data = await response.json();
+  return data.data[0].embedding;
+}
+
 // ===============================
 // MongoDB
 // ===============================
@@ -141,6 +158,43 @@ app.post("/chat", async (req, res) => {
   .sort({ createdAt: 1 })
   .limit(50);
 
+    const DocumentChunk = require("./models/DocumentChunk");
+
+// 1. Sprawdź, czy w historii jest dokument
+const docMsg = history.find(m => m.type === "document");
+
+let documentContext = "";
+if (docMsg) {
+  const documentId = docMsg.content.replace("DOCUMENT_ID:", "");
+
+  // 2. Embedding pytania
+  const qEmbed = await getEmbedding(message);
+
+  // 3. Pobierz wszystkie chunki dokumentu
+  const chunks = await DocumentChunk.find({ documentId });
+
+  // 4. Policz podobieństwo
+  function cosine(a, b) {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  const ranked = chunks
+    .map(c => ({
+      text: c.text,
+      score: cosine(qEmbed, c.embedding)
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  documentContext = ranked.map(r => r.text).join("\n\n---\n\n");
+}
+
 // ostatnie 10 wiadomości tekstowych
 const textHistory = history
   .filter(
@@ -182,9 +236,19 @@ const trimmedHistory = [...textHistory, ...imageHistory].sort(
 
     const messagesForModel = [
   { role: "system", content: SYSTEM_PROMPT },
+];
 
+// jeśli jest dokument → dodaj kontekst
+if (documentContext) {
+  messagesForModel.push({
+    role: "system",
+    content: `Oto fragmenty dokumentu powiązane z pytaniem:\n${documentContext}`
+  });
+}
+
+// dodaj historię rozmowy
+messagesForModel.push(
   ...trimmedHistory.map(m => {
-    // Jeśli to obraz – dołącz go ponownie jako obraz
     if (m.type === "image") {
       return {
         role: "user",
@@ -195,7 +259,6 @@ const trimmedHistory = [...textHistory, ...imageHistory].sort(
       };
     }
 
-    // Jeśli to opis obrazu
     if (m.type === "image_description") {
       return {
         role: "system",
@@ -203,20 +266,20 @@ const trimmedHistory = [...textHistory, ...imageHistory].sort(
       };
     }
 
-    // Normalne wiadomości tekstowe
     return {
       role: m.role,
       content: m.content
     };
-  }),
+  })
+);
 
-  ...(searchResults
-    ? [{
-        role: "system",
-        content: `Wyniki wyszukiwania internetowego:\n${searchResults}`
-      }]
-    : [])
-];
+// dodaj wyniki wyszukiwania
+if (searchResults) {
+  messagesForModel.push({
+    role: "system",
+    content: `Wyniki wyszukiwania internetowego:\n${searchResults}`
+  });
+}
 
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -434,9 +497,11 @@ res.json({ reply, chatId: currentChatId });
 // ===============================
 // POST /upload-document — dokumenty
 // ===============================
+const DocumentChunk = require("./models/DocumentChunk");
+
 app.post("/upload-document", upload.single("file"), async (req, res) => {
   try {
-    const { userId, chatId, message } = req.body;
+    const { userId, chatId } = req.body;
 
     if (!userId) return res.status(400).json({ error: "Brak userId" });
     if (!req.file) return res.status(400).json({ error: "Brak pliku!" });
@@ -459,57 +524,50 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       );
     }
 
+    // 1. Pobierz tekst dokumentu
     const text = await extractTextFromDocument(req.file);
 
+    // 2. Podziel na chunki
+    const chunkSize = 1500;
+    const chunks = [];
+    for (let i = 0; i < text.length; i += chunkSize) {
+      chunks.push(text.slice(i, i + chunkSize));
+    }
+
+    // 3. Generuj embeddingi i zapisuj
+    const documentId = crypto.randomUUID();
+
+    for (let i = 0; i < chunks.length; i++) {
+      const embedding = await getEmbedding(chunks[i]);
+
+      await DocumentChunk.create({
+        chatId: currentChatId,
+        userId,
+        documentId,
+        chunkIndex: i,
+        text: chunks[i],
+        embedding
+      });
+    }
+
+    // 4. Zapisz info o dokumencie w historii
     await ChatMessage.create({
       chatId: currentChatId,
-      role: "user",
+      role: "system",
       type: "document",
-      content: message || "[DOCUMENT]",
-      documentText: text
+      content: `DOCUMENT_ID:${documentId}`
     });
 
-    const prompt = `
-Użytkownik przesłał dokument. Oto jego treść:
-
-${text}
-
-Użytkownik pyta: "${message || "Opisz dokument"}"
-
-Odpowiedz na podstawie treści dokumentu.
-`;
-
-    const completion = await groq.chat.completions.create({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 600
+    res.json({
+      reply: "Dokument został zapisany i jest gotowy do analizy.",
+      chatId: currentChatId
     });
-
-    const reply = (completion.choices[0].message.content || "").trim();
-
-// jeśli model zwróci pustą odpowiedź – NIE zapisujemy jej do historii
-if (!reply) {
-  return res.json({
-    reply: "Nie udało mi się nic sensownego wyciągnąć z tego dokumentu. Spróbuj zadać pytanie inaczej.",
-    chatId: currentChatId
-  });
-}
-
-await ChatMessage.create({
-  chatId: currentChatId,
-  role: "assistant",
-  type: "text",
-  content: reply
-});
-
-res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
     console.error("❌ Błąd dokumentu:", err);
     res.status(500).json({ error: "Błąd serwera podczas analizy dokumentu" });
   }
 });
-
 
 // ===============================
 // Ekstrakcja tekstu z dokumentów
