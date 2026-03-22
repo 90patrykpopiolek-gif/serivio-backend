@@ -33,7 +33,7 @@ async function getEmbedding(text) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: "cohere/embed-multilingual-v3.0",
+      model: "nomic-embed-text",
       input: text
     })
   });
