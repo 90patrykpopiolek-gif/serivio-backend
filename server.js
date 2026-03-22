@@ -588,6 +588,11 @@ await DocumentChunk.deleteMany({ chatId: currentChatId });
 
 // 3. Generujemy embeddingi i zapisujemy do MongoDB
 for (const chunk of chunks) {
+  if (!chunk || chunk.trim().length < 5) {
+    console.log("⚠️ Pomijam pusty lub zbyt krótki chunk:", JSON.stringify(chunk));
+    continue;
+  }
+
   const embedding = await generateEmbedding(chunk);
 
   await DocumentChunk.create({
