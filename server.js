@@ -373,7 +373,7 @@ else {
       { role: "user", content: message }
     ];
   }
-}
+}); 
 
 // ===============================
 // GET /history
