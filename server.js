@@ -199,14 +199,14 @@ const probe = await DocumentChunk.aggregate([
       path: "embedding",
       queryVector: questionEmbedding,
       numCandidates: 5,
-      limit: 1
+      limit: 1,
+      filter: { chatId: currentChatId }   // <── DODAJ TO
     }
-  },
-  { $match: { chatId: currentChatId } }
+  }
 ]);
 
 const similarity = probe?.[0]?.score || 0;
-const isDocumentQuestion = similarity > 0.75; // próg możesz dostroić
+const isDocumentQuestion = probe.length > 0 && similarity > 0.6;
 
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
@@ -268,17 +268,17 @@ if (!isDocumentQuestion) {
 // 2) PYTANIE DOTYCZY DOKUMENTU → PEŁNY RAG
 else {
   const chunks = await DocumentChunk.aggregate([
-    {
-      $vectorSearch: {
-        index: "default",
-        path: "embedding",
-        queryVector: questionEmbedding,
-        numCandidates: 100,
-        limit: 5
-      }
-    },
-    { $match: { chatId: currentChatId } }
-  ]);
+  {
+    $vectorSearch: {
+      index: "default",
+      path: "embedding",
+      queryVector: questionEmbedding,
+      numCandidates: 100,
+      limit: 5,
+      filter: { chatId: currentChatId }   // <── DODAJ TO
+    }
+  }
+]);
 
   const contextText = chunks.map(c => c.text).join("\n\n");
 
