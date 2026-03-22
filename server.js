@@ -12,11 +12,13 @@ const ChatMessage = require("./models/ChatMessage");
 const User = require("./models/User");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
-const { Document } = require("docx");
+//const { Document } = require("docx");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { fal } = require("@fal-ai/client");
+const mammoth = require("mammoth");
+const fetch = require("node-fetch");
 
 dotenv.config();
 
@@ -705,8 +707,8 @@ async function extractFromPdf(file) {
 }
 
 async function extractFromDocx(file) {
-  const doc = await Document.load(file.buffer);
-  return doc.getText() || "Brak tekstu w DOCX.";
+  const result = await mammoth.extractRawText({ buffer: file.buffer });
+  return result.value || "Brak tekstu w DOCX.";
 }
 
 function extractFromTxt(file) {
