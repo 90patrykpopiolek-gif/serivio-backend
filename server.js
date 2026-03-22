@@ -57,7 +57,6 @@ const groq = new Groq({ apiKey: process.env.API_KEY });
 
 async function generateEmbedding(text) {
   try {
-    // zabezpieczenie przed za dużym inputem
     const safeText = text.slice(0, 5000);
 
     const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
@@ -74,13 +73,12 @@ async function generateEmbedding(text) {
 
     const data = await response.json();
 
-    if (!data || !data.data || !data.data[0]) {
-      console.error("❌ EMBEDDING ERROR – invalid response:", data);
+    if (!data || !data.data || !data.data[0] || !data.data[0].embedding) {
+      console.error("❌ EMBEDDING ERROR:", data);
       return null;
     }
 
     return data.data[0].embedding;
-
   } catch (err) {
     console.error("❌ EMBEDDING API ERROR:", err);
     return null;
@@ -206,46 +204,55 @@ const DocumentChunk = require("./models/DocumentChunk");
 // 1) embedding pytania
 const questionEmbedding = await generateEmbedding(message);
 
-// 2) szybki probe-search
-const probe = await DocumentChunk.aggregate([
-  {
-    $vectorSearch: {
-      index: "default",
-      path: "embedding",
-      queryVector: questionEmbedding,
-      numCandidates: 5,
-      limit: 1,
-      filter: { chatId: currentChatId }   // <── DODAJ TO
-    }
-  }
-]);
+let similarity = 0;
+let isDocumentQuestion = false;
 
-const similarity = probe?.[0]?.score ?? 0;
-
-// na testy możesz to logować:
-console.log("SIMILARITY:", similarity);
-
-let isDocumentQuestion = similarity > 0.15;
-
-    // Czy pytanie wymaga internetu?
-    const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
-      message
-    );
-
-    let searchResults = "";
-    if (needsSearch) {
-      try {
-        const tavilyResponse = await tavily.search(message, { max_results: 5 });
-        searchResults = tavilyResponse.results
-          .map(r => `• ${r.title}: ${r.url}`)
-          .join("\n");
-      } catch (e) {
-        console.error("Tavily error:", e);
-        searchResults = "Brak wyników wyszukiwania.";
+if (!questionEmbedding || !Array.isArray(questionEmbedding)) {
+  console.log("❌ Brak embeddingu pytania — wyłączam RAG");
+} else {
+  const probe = await DocumentChunk.aggregate([
+    {
+      $vectorSearch: {
+        index: "default",
+        path: "embedding",
+        queryVector: questionEmbedding,
+        numCandidates: 5,
+        limit: 1,
+        filter: { chatId: currentChatId }
       }
     }
+  ]);
 
-    let messagesForModel;
+  if (probe && probe.length > 0 && typeof probe[0].score === "number") {
+    similarity = probe[0].score;
+  } else {
+    console.log("❌ probe puste — brak wyników");
+  }
+
+  isDocumentQuestion = similarity > 0.15;
+}
+
+console.log("SIMILARITY:", similarity);
+
+// Czy pytanie wymaga internetu?
+const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
+  message
+);
+
+let searchResults = "";
+if (needsSearch) {
+  try {
+    const tavilyResponse = await tavily.search(message, { max_results: 5 });
+    searchResults = tavilyResponse.results
+      .map(r => `• ${r.title}: ${r.url}`)
+      .join("\n");
+  } catch (e) {
+    console.error("Tavily error:", e);
+    searchResults = "Brak wyników wyszukiwania.";
+  }
+}
+
+let messagesForModel;
 
 // 1) PYTANIE NIE DOTYCZY DOKUMENTU → ZWYKŁY CZAT
 if (!isDocumentQuestion) {
@@ -365,50 +372,6 @@ else {
     ];
   }
 }
-
-    // TWARDY LIMIT ROZMIARU PROMPTU — ZABEZPIECZENIE PRZED ZAPĘTLENIEM
-let promptString = JSON.stringify(messagesForModel);
-
-// jeśli prompt jest za duży, usuwamy najstarsze wiadomości z historii
-while (promptString.length > 20000 && messagesForModel.length > 4) {
-  messagesForModel.splice(1, 1);
-  promptString = JSON.stringify(messagesForModel);
-}  
-
-    const completion = await groq.chat.completions.create({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      messages: messagesForModel,
-      max_tokens: 800,
-      temperature: 0.4
-    });
-
-    const reply = (completion.choices[0].message.content || "").trim();
-
-    console.log("RAW MODEL RESPONSE:", JSON.stringify(completion, null, 2));
-console.log("EXTRACTED reply:", reply);
-
-    // jeśli model zwróci pustą odpowiedź – NIE zapisujemy jej do historii
-if (!reply) {
-  return res.json({
-    reply: "Przepraszam, nie zrozumiałem. Możesz powtórzyć?",
-    chatId: currentChatId
-  });
-}
-    
-    await ChatMessage.create({
-  chatId: currentChatId,
-  role: "assistant",
-  content: reply,
-  type: "text"
-});
-
-    res.json({ reply, chatId: currentChatId });
-
-  } catch (error) {
-    console.error("Chat error:", error);
-    res.status(500).json({ error: "Błąd serwera" });
-  }
-});
 
 // ===============================
 // GET /history
@@ -635,11 +598,16 @@ await DocumentChunk.deleteMany({ chatId: currentChatId });
 // 3. Generujemy embeddingi i zapisujemy do MongoDB
 for (const chunk of chunks) {
   if (!chunk || chunk.trim().length < 5) {
-    console.log("⚠️ Pomijam pusty lub zbyt krótki chunk:", JSON.stringify(chunk));
+    console.log("⚠️ Pomijam pusty chunk:", chunk);
     continue;
   }
 
   const embedding = await generateEmbedding(chunk);
+
+  if (!embedding) {
+    console.log("❌ Brak embeddingu — pomijam chunk:", chunk.slice(0, 80));
+    continue;
+  }
 
   await DocumentChunk.create({
     chatId: currentChatId,
