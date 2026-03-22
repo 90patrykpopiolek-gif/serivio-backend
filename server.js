@@ -536,7 +536,7 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
     const text = await extractTextFromDocument(req.file);
 
     // 2. Podziel na chunki
-    const chunkSize = 1500;
+    const chunkSize = 15000;
     const chunks = [];
     for (let i = 0; i < text.length; i += chunkSize) {
       chunks.push(text.slice(i, i + chunkSize));
