@@ -17,6 +17,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { fal } = require("@fal-ai/client");
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 dotenv.config();
 
@@ -38,6 +39,13 @@ async function getEmbedding(text) {
   });
 
   const data = await response.json();
+
+  console.log("🔍 EMBEDDING RESPONSE:", data);
+
+  if (!data || !data.data || !data.data[0]) {
+    throw new Error("Embedding API zwróciło błąd: " + JSON.stringify(data));
+  }
+
   return data.data[0].embedding;
 }
 
