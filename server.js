@@ -221,7 +221,7 @@ const probe = await DocumentChunk.aggregate([
 ]);
 
 const similarity = probe?.[0]?.score || 0;
-let isDocumentQuestion = similarity > 0.35;
+let isDocumentQuestion = true;
 
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
