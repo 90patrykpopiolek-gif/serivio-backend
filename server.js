@@ -12,13 +12,11 @@ const ChatMessage = require("./models/ChatMessage");
 const User = require("./models/User");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
-//const { Document } = require("docx");
+const { Document } = require("docx");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { fal } = require("@fal-ai/client");
-const mammoth = require("mammoth");
-const fetch = require("node-fetch");
 
 dotenv.config();
 
@@ -56,36 +54,6 @@ const upload = multer({
 });
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
-
-async function generateEmbedding(text) {
-  try {
-    const safeText = text.slice(0, 5000);
-
-    const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "BAAI/bge-m3",
-        input: safeText
-      })
-    });
-
-    const data = await response.json();
-
-    if (!data || !data.data || !data.data[0] || !data.data[0].embedding) {
-      console.error("❌ EMBEDDING ERROR:", data);
-      return null;
-    }
-
-    return data.data[0].embedding;
-  } catch (err) {
-    console.error("❌ EMBEDDING API ERROR:", err);
-    return null;
-  }
-}
 
 const SYSTEM_PROMPT = `
 Jesteś asystentem o nazwie Serivio.
@@ -189,191 +157,101 @@ const imageHistory = history
   .filter(m => m.type === "image" || m.type === "image_description")
   .slice(-5);
 
-// ostatnie 3 dokumenty
-const documentHistory = history
-  .filter(m => m.type === "document_text")
-  .slice(-3);
-
-// łączymy wszystkie listy i sortujemy po czasie
-const trimmedHistory = [...textHistory, ...imageHistory, ...documentHistory]
-  .sort((a, b) => a.createdAt - b.createdAt);
-
-    // ===============================
-// WYKRYWANIE PYTANIA O DOKUMENT (embedding probe)
-// ===============================
-const DocumentChunk = require("./models/DocumentChunk");
-
-// 1) embedding pytania
-const questionEmbedding = await generateEmbedding(message);
-
-let similarity = 0;
-let isDocumentQuestion = false;
-
-if (!questionEmbedding || !Array.isArray(questionEmbedding)) {
-  console.log("❌ Brak embeddingu pytania — wyłączam RAG");
-} else {
-  const probe = await DocumentChunk.aggregate([
-    {
-      $vectorSearch: {
-        index: "default",
-        path: "embedding",
-        queryVector: questionEmbedding,
-        numCandidates: 5,
-        limit: 1,
-        filter: { chatId: currentChatId }
-      }
-    }
-  ]);
-
-  if (probe && probe.length > 0 && typeof probe[0].score === "number") {
-    similarity = probe[0].score;
-  } else {
-    console.log("❌ probe puste — brak wyników");
-  }
-
-  isDocumentQuestion = similarity > 0.15;
-}
-
-console.log("SIMILARITY:", similarity);
-
-// Czy pytanie wymaga internetu?
-const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
-  message
+// łączymy obie listy i sortujemy po czasie
+const trimmedHistory = [...textHistory, ...imageHistory].sort(
+  (a, b) => a.createdAt - b.createdAt
 );
 
-let searchResults = "";
-if (needsSearch) {
-  try {
-    const tavilyResponse = await tavily.search(message, { max_results: 5 });
-    searchResults = tavilyResponse.results
-      .map(r => `• ${r.title}: ${r.url}`)
-      .join("\n");
-  } catch (e) {
-    console.error("Tavily error:", e);
-    searchResults = "Brak wyników wyszukiwania.";
-  }
-}
+    // Czy pytanie wymaga internetu?
+    const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
+      message
+    );
 
-let messagesForModel;
-
-// 1) PYTANIE NIE DOTYCZY DOKUMENTU → ZWYKŁY CZAT
-if (!isDocumentQuestion) {
-  messagesForModel = [
-    { role: "system", content: SYSTEM_PROMPT },
-
-    ...trimmedHistory.map(m => {
-      if (m.type === "image") {
-        return {
-          role: "user",
-          content: [
-            { type: "text", text: m.content || "Użytkownik wysłał obraz." },
-            { type: "image_url", image_url: { url: m.imageUrl } }
-          ]
-        };
-      }
-
-      if (m.type === "image_description") {
-        return {
-          role: "system",
-          content: `Opis obrazu: ${m.imageDescription || m.content}`
-        };
-      }
-
-      return { role: m.role, content: m.content };
-    }),
-
-    ...(searchResults
-      ? [{
-          role: "system",
-          content: `Wyniki wyszukiwania internetowego:\n${searchResults}`
-        }]
-      : []),
-
-    { role: "user", content: message }
-  ];
-}
-
-// 2) PYTANIE DOTYCZY DOKUMENTU → PEŁNY RAG
-else {
-  const chunks = await DocumentChunk.aggregate([
-    {
-      $vectorSearch: {
-        index: "default",
-        path: "embedding",
-        queryVector: questionEmbedding,
-        numCandidates: 100,
-        limit: 5,
-        filter: { chatId: currentChatId }
+    let searchResults = "";
+    if (needsSearch) {
+      try {
+        const tavilyResponse = await tavily.search(message, { max_results: 5 });
+        searchResults = tavilyResponse.results
+          .map(r => `• ${r.title}: ${r.url}`)
+          .join("\n");
+      } catch (e) {
+        console.error("Tavily error:", e);
+        searchResults = "Brak wyników wyszukiwania.";
       }
     }
-  ]);
 
-  const contextText = chunks.map(c => c.text).join("\n\n");
+    const messagesForModel = [
+  { role: "system", content: SYSTEM_PROMPT },
 
-  // jeśli nie ma kontekstu → fallback do zwykłego czatu
-  if (!contextText || contextText.trim().length < 10) {
-    console.log("Brak kontekstu dokumentu – fallback");
-    messagesForModel = [
-      { role: "system", content: SYSTEM_PROMPT },
+  ...trimmedHistory.map(m => {
+    // Jeśli to obraz – dołącz go ponownie jako obraz
+    if (m.type === "image") {
+      return {
+        role: "user",
+        content: [
+          { type: "text", text: m.content || "Użytkownik wysłał obraz." },
+          { type: "image_url", image_url: { url: m.imageUrl } }
+        ]
+      };
+    }
 
-      ...trimmedHistory.map(m => {
-        if (m.type === "image") {
-          return {
-            role: "user",
-            content: [
-              { type: "text", text: m.content || "Użytkownik wysłał obraz." },
-              { type: "image_url", image_url: { url: m.imageUrl } }
-            ]
-          };
-        }
-
-        if (m.type === "image_description") {
-          return {
-            role: "system",
-            content: `Opis obrazu: ${m.imageDescription || m.content}`
-          };
-        }
-
-        return { role: m.role, content: m.content };
-      }),
-
-      { role: "user", content: message }
-    ];
-  } else {
-    // PEŁNY RAG — KONTEKST NA KOŃCU
-    messagesForModel = [
-      { role: "system", content: SYSTEM_PROMPT },
-
-      ...trimmedHistory.map(m => {
-        if (m.type === "image") {
-          return {
-            role: "user",
-            content: [
-              { type: "text", text: m.content || "Użytkownik wysłał obraz." },
-              { type: "image_url", image_url: { url: m.imageUrl } }
-            ]
-          };
-        }
-
-        if (m.type === "image_description") {
-          return {
-            role: "system",
-            content: `Opis obrazu: ${m.imageDescription || m.content}`
-          };
-        }
-
-        return { role: m.role, content: m.content };
-      }),
-
-      {
+    // Jeśli to opis obrazu
+    if (m.type === "image_description") {
+      return {
         role: "system",
-        content: `Kontekst dokumentu:\n${contextText}`
-      },
+        content: `Opis obrazu: ${m.imageDescription || m.content}`
+      };
+    }
 
-      { role: "user", content: message }
-    ];
+    // Normalne wiadomości tekstowe
+    return {
+      role: m.role,
+      content: m.content
+    };
+  }),
+
+  ...(searchResults
+    ? [{
+        role: "system",
+        content: `Wyniki wyszukiwania internetowego:\n${searchResults}`
+      }]
+    : [])
+];
+
+    const completion = await groq.chat.completions.create({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: messagesForModel,
+      max_tokens: 800,
+      temperature: 0.4
+    });
+
+    const reply = (completion.choices[0].message.content || "").trim();
+
+    console.log("RAW MODEL RESPONSE:", JSON.stringify(completion, null, 2));
+console.log("EXTRACTED reply:", reply);
+
+    // jeśli model zwróci pustą odpowiedź – NIE zapisujemy jej do historii
+if (!reply) {
+  return res.json({
+    reply: "Przepraszam, nie zrozumiałem. Możesz powtórzyć?",
+    chatId: currentChatId
+  });
+}
+    
+    await ChatMessage.create({
+  chatId: currentChatId,
+  role: "assistant",
+  content: reply,
+  type: "text"
+});
+
+    res.json({ reply, chatId: currentChatId });
+
+  } catch (error) {
+    console.error("Chat error:", error);
+    res.status(500).json({ error: "Błąd serwera" });
   }
-}); 
+});
 
 // ===============================
 // GET /history
@@ -414,18 +292,12 @@ app.post("/reset", async (req, res) => {
 
   if (!userId) return res.status(400).json({ error: "Brak userId" });
 
-  // pobieramy wszystkie czaty użytkownika
-  const sessions = await ChatSession.find({ userId });
-  const chatIds = sessions.map(s => s.chatId);
-
-  // usuwamy sesje
   await ChatSession.deleteMany({ userId });
-
-  // usuwamy wiadomości powiązane z tymi sesjami
-  await ChatMessage.deleteMany({ chatId: { $in: chatIds } });
+  await ChatMessage.deleteMany({ userId });
 
   res.json({ status: "reset" });
 });
+
 
 // ===============================
 // POST /deleteChat
@@ -482,7 +354,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     filePath = path.join(UPLOAD_DIR, fileName);
     fs.writeFileSync(filePath, req.file.buffer);
 
-    const imageUrl = `${process.env.BACKEND_URL || "https://serivio-backend.onrender.com"}/uploads/${fileName}`;
+    const imageUrl = `https://serivio-backend.onrender.com/uploads/${fileName}`;
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -589,53 +461,18 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
 
     const text = await extractTextFromDocument(req.file);
 
-    const DocumentChunk = require("./models/DocumentChunk");
-
-// 1. Chunkowanie dokumentu
-const chunks = chunkText(text, 800);
-
-// 2. Usuwamy stare fragmenty dokumentów z tego czatu
-await DocumentChunk.deleteMany({ chatId: currentChatId });
-
-// 3. Generujemy embeddingi i zapisujemy do MongoDB
-for (const chunk of chunks) {
-  if (!chunk || chunk.trim().length < 5) {
-    console.log("⚠️ Pomijam pusty chunk:", chunk);
-    continue;
-  }
-
-  const embedding = await generateEmbedding(chunk);
-
-  if (!embedding) {
-    console.log("❌ Brak embeddingu — pomijam chunk:", chunk.slice(0, 80));
-    continue;
-  }
-
-  await DocumentChunk.create({
-    chatId: currentChatId,
-    text: chunk,
-    embedding
-  });
-}
-
-    // Limit długości dokumentu (np. 10k znaków)
-    let limitedText = text;
-    if (limitedText.length > 10000) {
-      limitedText = limitedText.slice(0, 10000) + "\n\n[... Dokument skrócony ...]";
-    }
-
     await ChatMessage.create({
       chatId: currentChatId,
       role: "user",
       type: "document",
       content: message || "[DOCUMENT]",
-      documentText: limitedText   
+      documentText: text
     });
 
     const prompt = `
 Użytkownik przesłał dokument. Oto jego treść:
 
-${limitedText}
+${text}
 
 Użytkownik pyta: "${message || "Opisz dokument"}"
 
@@ -650,35 +487,29 @@ Odpowiedz na podstawie treści dokumentu.
 
     const reply = (completion.choices[0].message.content || "").trim();
 
-    if (!reply) {
-      return res.json({
-        reply: "Nie udało mi się nic sensownego wyciągnąć z tego dokumentu. Spróbuj zadać pytanie inaczej.",
-        chatId: currentChatId
-      });
-    }
+// jeśli model zwróci pustą odpowiedź – NIE zapisujemy jej do historii
+if (!reply) {
+  return res.json({
+    reply: "Nie udało mi się nic sensownego wyciągnąć z tego dokumentu. Spróbuj zadać pytanie inaczej.",
+    chatId: currentChatId
+  });
+}
 
-    await ChatMessage.create({
-      chatId: currentChatId,
-      role: "assistant",
-      type: "text",
-      content: reply
-    });
+await ChatMessage.create({
+  chatId: currentChatId,
+  role: "assistant",
+  type: "text",
+  content: reply
+});
 
-    await ChatMessage.create({
-      chatId: currentChatId,
-      role: "system",
-      type: "document_text",
-      content: "[DOCUMENT_TEXT]",
-      documentText: limitedText   
-    });
-
-    res.json({ reply, chatId: currentChatId });
+res.json({ reply, chatId: currentChatId });
 
   } catch (err) {
     console.error("❌ Błąd dokumentu:", err);
     res.status(500).json({ error: "Błąd serwera podczas analizy dokumentu" });
   }
 });
+
 
 // ===============================
 // Ekstrakcja tekstu z dokumentów
@@ -693,22 +524,14 @@ async function extractTextFromDocument(file) {
   return "Nieobsługiwany format pliku.";
 }
 
-function chunkText(text, size = 800) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += size) {
-    chunks.push(text.slice(i, i + size));
-  }
-  return chunks;
-}
-
 async function extractFromPdf(file) {
   const data = await pdfParse(file.buffer);
   return data.text || "Brak tekstu w PDF.";
 }
 
 async function extractFromDocx(file) {
-  const result = await mammoth.extractRawText({ buffer: file.buffer });
-  return result.value || "Brak tekstu w DOCX.";
+  const doc = await Document.load(file.buffer);
+  return doc.getText() || "Brak tekstu w DOCX.";
 }
 
 function extractFromTxt(file) {
@@ -1010,68 +833,6 @@ return res.json({
 
   } catch (err) {
     console.error("❌ credits/use error:", err);
-    res.status(500).json({ error: "Błąd serwera" });
-  }
-});
-
-// ===============================
-// POST /ask-document — RAG (wyszukiwanie wektorowe)
-// ===============================
-app.post("/ask-document", async (req, res) => {
-  try {
-    const { chatId, question } = req.body;
-
-    if (!chatId) return res.status(400).json({ error: "Brak chatId" });
-    if (!question) return res.status(400).json({ error: "Brak pytania" });
-
-    const DocumentChunk = require("./models/DocumentChunk");
-
-    // 1. embedding pytania
-    const questionEmbedding = await generateEmbedding(question);
-
-    // 2. vector search
-    const results = await mongoose.connection.db
-      .collection("documentchunks") // nazwa kolekcji w MongoDB
-      .aggregate([
-        {
-          $vectorSearch: {
-  index: "default",
-  path: "embedding",
-  queryVector: questionEmbedding,
-  numCandidates: 100,
-  limit: 5,
-  filter: { chatId }   // <── to jest kluczowe
-}
-        }
-      ])
-      .toArray();
-
-    const context = results.map(r => r.text).join("\n\n---\n\n");
-
-    const prompt = `
-Odpowiedz na pytanie użytkownika na podstawie dokumentu.
-
-Pytanie:
-${question}
-
-Najbardziej pasujące fragmenty dokumentu:
-${context}
-
-Jeśli dokument nie zawiera odpowiedzi, powiedz "Nie znalazłem odpowiedzi w dokumencie".
-`;
-
-    const completion = await groq.chat.completions.create({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 600
-    });
-
-    const reply = completion.choices[0].message.content.trim();
-
-    res.json({ reply });
-
-  } catch (err) {
-    console.error("❌ Błąd /ask-document:", err);
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
