@@ -33,7 +33,7 @@ async function getEmbedding(text) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: "Perplexity pplx-embed-v1-0.6B",
+      model: "BAAI/bge-m3",
       input: text
     })
   });
