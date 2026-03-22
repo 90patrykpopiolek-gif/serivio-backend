@@ -221,7 +221,7 @@ const probe = await DocumentChunk.aggregate([
 ]);
 
 const similarity = probe?.[0]?.score || 0;
-const isDocumentQuestion = probe.length > 0 && similarity > 0.6;
+let isDocumentQuestion = similarity > 0.35;
 
     // Czy pytanie wymaga internetu?
     const needsSearch = /kto|kiedy|ile|data|rok|prezydent|premier|pogoda|wynik|co się stało|news|aktualne/i.test(
@@ -339,7 +339,7 @@ ${contextText}
 let promptString = JSON.stringify(messagesForModel);
 
 // jeśli prompt jest za duży, usuwamy najstarsze wiadomości (po system prompt)
-while (promptString.length > 12000 && messagesForModel.length > 2) {
+while (promptString.length > 20000 && messagesForModel.length > 2) {
   messagesForModel.splice(1, 1); // usuwa najstarszą wiadomość, system zostaje
   promptString = JSON.stringify(messagesForModel);
 }  
