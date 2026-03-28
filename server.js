@@ -163,6 +163,15 @@ app.post("/chat", async (req, res) => {
       type: "text"
     });
 
+    // LIMITUJEMY LICZBĘ WIADOMOŚCI DO 50
+const userCount = await ChatMessage.countDocuments({ chatId: currentChatId });
+if (userCount > 50) {
+  await ChatMessage.findOneAndDelete(
+    { chatId: currentChatId },
+    { sort: { createdAt: 1 } } // usuń NAJSTARSZĄ
+  );
+}
+
     const history = await ChatMessage.find({ chatId: currentChatId })
   .sort({ createdAt: 1 })
   .limit(50);
@@ -316,6 +325,15 @@ if (!reply) {
   content: reply,
   type: "text"
 });
+
+    // LIMITUJEMY LICZBĘ WIADOMOŚCI DO 50
+const count = await ChatMessage.countDocuments({ chatId: currentChatId });
+if (count > 50) {
+  await ChatMessage.findOneAndDelete(
+    { chatId: currentChatId },
+    { sort: { createdAt: 1 } } // usuń NAJSTARSZĄ
+  );
+}
 
     res.json({ reply, chatId: currentChatId });
 
