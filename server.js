@@ -533,33 +533,16 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       );
     }
 
-    // 1. Pobierz tekst dokumentu
-    const text = await extractTextFromDocument(req.file);
+        const documentId = crypto.randomUUID();
 
-    // 2. Podziel na chunki
-    const chunkSize = 15000;
-    const chunks = [];
-    for (let i = 0; i < text.length; i += chunkSize) {
-      chunks.push(text.slice(i, i + chunkSize));
-    }
+    await DocumentMeta.create({
+      documentId,
+      userId,
+      chatId: currentChatId,
+      originalName: req.file.originalname,
+      status: "processing"
+    });
 
-    // 3. Generuj embeddingi i zapisuj
-    const documentId = crypto.randomUUID();
-
-    for (let i = 0; i < chunks.length; i++) {
-      const embedding = await getEmbedding(chunks[i]);
-
-      await DocumentChunk.create({
-        chatId: currentChatId,
-        userId,
-        documentId,
-        chunkIndex: i,
-        text: chunks[i],
-        embedding
-      });
-    }
-
-    // 4. Zapisz info o dokumencie w historii
     await ChatMessage.create({
       chatId: currentChatId,
       role: "system",
@@ -567,9 +550,25 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
       content: `DOCUMENT_ID:${documentId}`
     });
 
+    // OD RAZU odpowiedź
     res.json({
-      reply: "Dokument został zapisany i jest gotowy do analizy.",
-      chatId: currentChatId
+      reply: "Dokument został przyjęty. Trwa analizowanie pliku...",
+      chatId: currentChatId,
+      documentId
+    });
+
+    // Przetwarzanie w tle
+    processDocumentInBackground({
+      documentId,
+      userId,
+      chatId: currentChatId,
+      file: req.file
+    }).catch(err => {
+      console.error("❌ Błąd przetwarzania dokumentu:", err);
+      DocumentMeta.updateOne(
+        { documentId },
+        { $set: { status: "error" } }
+      );
     });
 
   } catch (err) {
@@ -577,6 +576,48 @@ app.post("/upload-document", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: "Błąd serwera podczas analizy dokumentu" });
   }
 });
+
+// ===============================
+// Przetwarzanie dokumentu w tle (asynchroniczne, szybkie)
+// ===============================
+async function processDocumentInBackground({ documentId, userId, chatId, file }) {
+  console.log("▶️ Start przetwarzania dokumentu:", documentId);
+
+  // 1. Ekstrakcja tekstu
+  const text = await extractTextFromDocument(file);
+
+  // 2. Chunkowanie (większe chunki = mniej embeddingów)
+  const chunkSize = 25000;
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
+  }
+
+  // 3. Równoległe embeddingi
+  const embeddings = await Promise.all(
+    chunks.map(c => getEmbedding(c))
+  );
+
+  // 4. Zapis hurtowy
+  await DocumentChunk.insertMany(
+    chunks.map((c, i) => ({
+      chatId,
+      userId,
+      documentId,
+      chunkIndex: i,
+      text: c,
+      embedding: embeddings[i]
+    }))
+  );
+
+  // 5. Oznacz dokument jako gotowy
+  await DocumentMeta.updateOne(
+    { documentId },
+    { $set: { status: "ready", updatedAt: new Date() } }
+  );
+
+  console.log("✅ Dokument przetworzony:", documentId);
+}
 
 // ===============================
 // Ekstrakcja tekstu z dokumentów
