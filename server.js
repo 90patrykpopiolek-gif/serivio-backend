@@ -647,6 +647,21 @@ function extractFromTxt(file) {
 }
 
 // ===============================
+// STATUS DOKUMENTU
+// ===============================
+app.get("/document-status/:documentId", async (req, res) => {
+  const { documentId } = req.params;
+
+  const meta = await DocumentMeta.findOne({ documentId });
+
+  if (!meta) {
+    return res.status(404).json({ status: "not_found" });
+  }
+
+  res.json({ status: meta.status });
+});
+
+// ===============================
 // POST /generate-image — generowanie obrazów fal.ai
 // ===============================
 app.post("/generate-image", async (req, res) => {
