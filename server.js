@@ -199,7 +199,7 @@ if (docMsg) {
       score: cosine(qEmbed, c.embedding)
     }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
+    .slice(0, 2);
 
   documentContext = ranked.map(r => r.text).join("\n\n---\n\n");
 }
@@ -587,7 +587,7 @@ async function processDocumentInBackground({ documentId, userId, chatId, file })
   const text = await extractTextFromDocument(file);
 
   // 2. Chunkowanie (większe chunki = mniej embeddingów)
-  const chunkSize = 25000;
+  const chunkSize = 20000;
   const chunks = [];
   for (let i = 0; i < text.length; i += chunkSize) {
     chunks.push(text.slice(i, i + chunkSize));
