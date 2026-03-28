@@ -169,8 +169,8 @@ app.post("/chat", async (req, res) => {
 
     const DocumentChunk = require("./models/DocumentChunk");
 
-// 1. Sprawdź, czy w historii jest dokument
-const docMsg = history.find(m => m.type === "document");
+// 1. Sprawdź, czy w historii jest dokument — bierzemy ostatni
+const docMsg = history.filter(m => m.type === "document").pop();
 
 let documentContext = "";
 if (docMsg) {
