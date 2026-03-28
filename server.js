@@ -10,6 +10,7 @@ const tavily = new TavilyClient({
 const ChatSession = require("./models/ChatSession");
 const ChatMessage = require("./models/ChatMessage");
 const User = require("./models/User");
+const DocumentMeta = require("./models/DocumentMeta");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 const { Document } = require("docx");
