@@ -751,7 +751,10 @@ app.post("/generate-image", async (req, res) => {
 });
 
 // fal.ai zwraca wynik w result.output
-const imageUrl = result?.output?.images?.[0]?.url;
+const imageUrl =
+  result?.output?.images?.[0]?.url ||
+  result?.data?.images?.[0]?.url ||
+  result?.dane?.obrazy?.[0]?.url;
 
 if (!imageUrl) {
   console.error("❌ fal.ai nie zwróciło URL obrazu:", result);
@@ -866,7 +869,10 @@ uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat
       input: { prompt: imagePrompt }
     });
 
-    const generatedImageUrl = falResult?.output?.images?.[0]?.url;
+    const generatedImageUrl =
+  falResult?.output?.images?.[0]?.url ||
+  falResult?.data?.images?.[0]?.url ||
+  falResult?.dane?.obrazy?.[0]?.url;
 
 if (!generatedImageUrl) {
   console.error("❌ fal.ai nie zwróciło URL obrazu:", falResult);
