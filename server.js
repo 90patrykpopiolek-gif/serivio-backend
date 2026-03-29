@@ -266,29 +266,42 @@ if (documentContext) {
 
 // dodaj historię rozmowy
 messagesForModel.push(
-  ...trimmedHistory.map(m => {
-    if (m.type === "image") {
-      return {
-        role: "user",
-        content: [
-          { type: "text", text: m.content || "Użytkownik wysłał obraz." },
-          { type: "image_url", image_url: { url: m.imageUrl } }
-        ]
-      };
-    }
+  ...trimmedHistory
+    .map(m => {
+      // 🔥 jeśli to obraz — sprawdź, czy plik istnieje
+      if (m.type === "image") {
+        const filePath = path.join(__dirname, "uploads", path.basename(m.imageUrl));
 
-    if (m.type === "image_description") {
-      return {
-        role: "system",
-        content: `Opis obrazu: ${m.imageDescription || m.content}`
-      };
-    }
+        // jeśli plik NIE istnieje → pomiń tę wiadomość
+        if (!fs.existsSync(filePath)) {
+          return null;
+        }
 
-    return {
-      role: m.role,
-      content: m.content
-    };
-  })
+        // jeśli istnieje → wyślij do modelu
+        return {
+          role: "user",
+          content: [
+            { type: "text", text: m.content || "Użytkownik wysłał obraz." },
+            { type: "image_url", image_url: { url: m.imageUrl } }
+          ]
+        };
+      }
+
+      // opisy obrazów
+      if (m.type === "image_description") {
+        return {
+          role: "system",
+          content: `Opis obrazu: ${m.imageDescription || m.content}`
+        };
+      }
+
+      // normalne wiadomości
+      return {
+        role: m.role,
+        content: m.content
+      };
+    })
+    .filter(Boolean) // usuń null (martwe obrazy)
 );
 
 // dodaj wyniki wyszukiwania
