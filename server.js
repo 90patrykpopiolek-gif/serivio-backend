@@ -96,7 +96,7 @@ Zasady:
 - Nie wymyślasz faktów.
 `;
 //=====================================
-//wykrywanie intencji generowania
+// wykrywanie intencji generowania
 //=====================================
 async function detectImageIntent(message) {
   const completion = await groq.chat.completions.create({
@@ -104,7 +104,27 @@ async function detectImageIntent(message) {
     messages: [
       {
         role: "system",
-        content: "Odpowiadasz tylko TAK lub NIE. Czy użytkownik chce wygenerować nowy obraz?"
+        content: `
+Odpowiadasz TYLKO słowem TAK lub NIE.
+
+Odpowiedz TAK, jeśli użytkownik:
+- chce wygenerować obraz,
+- chce stworzyć grafikę,
+- chce narysować coś,
+- chce stworzyć scenę,
+- chce wygenerować zdjęcie,
+- prosi o stworzenie wizualizacji,
+- używa słów: "wygeneruj obraz", "stwórz obraz", "zrób obraz", "zrób grafikę",
+  "generate image", "make a picture", "draw", "create image".
+
+Odpowiedz NIE, jeśli użytkownik:
+- prosi tylko o opis,
+- komentuje zdjęcie,
+- zadaje pytanie,
+- nie prosi o stworzenie nowego obrazu.
+
+Odpowiadasz jednym słowem: TAK lub NIE.
+`
       },
       {
         role: "user",
