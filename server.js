@@ -95,6 +95,29 @@ Zasady:
 - Jeśli pytanie jest niejasne — prosisz o doprecyzowanie.
 - Nie wymyślasz faktów.
 `;
+//=====================================
+//wykrywanie intencji generowania
+//=====================================
+async function detectImageIntent(message) {
+  const completion = await groq.chat.completions.create({
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    messages: [
+      {
+        role: "system",
+        content: "Odpowiadasz tylko TAK lub NIE. Czy użytkownik chce wygenerować nowy obraz?"
+      },
+      {
+        role: "user",
+        content: message
+      }
+    ],
+    max_tokens: 5,
+    temperature: 0
+  });
+
+  const reply = (completion.choices[0].message.content || "").trim().toLowerCase();
+  return reply.includes("tak");
+}
 
 // ===============================
 // KREDYTY + LIMITY – FUNKCJA
@@ -781,9 +804,7 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
 
     const sceneDescription = (visionCompletion.choices[0].message.content || "").trim();
 
-    const wantsImage = /obraz|wygeneruj|zrób obraz|grafikę|zdjęcie z|stwórz scenę|zrób scenę/.test(
-      (message || "").toLowerCase()
-    );
+    const wantsImage = await detectImageIntent(message || "");
 
     if (!wantsImage) {
   const cleanScene = (sceneDescription || "").trim();
