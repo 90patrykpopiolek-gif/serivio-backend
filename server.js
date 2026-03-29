@@ -227,7 +227,7 @@ const textHistory = history
 // ostatnie 5 wiadomości związanych z obrazem
 const imageHistory = history
   .filter(m => m.type === "image" || m.type === "image_description")
-  .slice(-5);
+  .slice(-2);
 
 // łączymy obie listy i sortujemy po czasie
 const trimmedHistory = [...textHistory, ...imageHistory].sort(
@@ -315,7 +315,7 @@ if (searchResults) {
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: messagesForModel,
-      max_tokens: 800,
+      max_tokens: 300,
       temperature: 0.4
     });
 
@@ -485,7 +485,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
           ]
         }
       ],
-      max_tokens: 600,
+      max_tokens: 300,
       temperature: 0.4
     });
 
@@ -775,8 +775,8 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
           ]
         }
       ],
-      max_tokens: 600,
-      temperature: 0.3
+      max_tokens: 300,
+      temperature: 0.4
     });
 
     const sceneDescription = (visionCompletion.choices[0].message.content || "").trim();
