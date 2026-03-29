@@ -746,26 +746,26 @@ app.post("/generate-image", async (req, res) => {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
-    const result = await fal.subscribe("fal-ai/flux/dev", {
-  input: {
-    prompt,
-    persist: true,
-    storage: "public"
-  }
-});
+    // UŻYWAMY fal.run zamiast fal.subscribe
+    const result = await fal.run("fal-ai/flux/dev", {
+      input: {
+        prompt,
+        persist: true,
+        storage: "public"
+      }
+    });
 
-// fal.ai zwraca wynik w result.output
-const imageUrl =
-  result?.output?.images?.[0]?.url ||
-  result?.data?.images?.[0]?.url ||
-  result?.dane?.obrazy?.[0]?.url;
+    const imageUrl =
+      result?.output?.images?.[0]?.url ||
+      result?.data?.images?.[0]?.url ||
+      result?.dane?.obrazy?.[0]?.url;
 
-if (!imageUrl) {
-  console.error("❌ fal.ai nie zwróciło URL obrazu:", result);
-  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-}
+    if (!imageUrl) {
+      console.error("❌ fal.ai nie zwróciło URL obrazu:", result);
+      return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+    }
 
-res.json({ imageUrl });
+    res.json({ imageUrl });
 
   } catch (err) {
     console.error("❌ Błąd generowania obrazu:", err);
@@ -773,6 +773,10 @@ res.json({ imageUrl });
   }
 });
 
+
+// ===============================
+// POST /chat-image — analiza zdjęcia + generowanie nowego obrazu
+// ===============================
 app.post("/chat-image", upload.single("file"), async (req, res) => {
   try {
     const { userId, chatId, message } = req.body;
@@ -834,29 +838,29 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
     const wantsImage = await detectImageIntent(message || "");
 
     if (!wantsImage) {
-  const cleanScene = (sceneDescription || "").trim();
+      const cleanScene = (sceneDescription || "").trim();
 
-  if (!cleanScene) {
-    return res.json({
-      type: "text",
-      reply: "Nie potrafię dobrze opisać tej sceny. Spróbuj napisać, o co dokładnie Ci chodzi.",
-      chatId: currentChatId
-    });
-  }
+      if (!cleanScene) {
+        return res.json({
+          type: "text",
+          reply: "Nie potrafię dobrze opisać tej sceny. Spróbuj napisać, o co dokładnie Ci chodzi.",
+          chatId: currentChatId
+        });
+      }
 
-  await ChatMessage.create({
-    chatId: currentChatId,
-    role: "assistant",
-    type: "text",
-    content: cleanScene
-  });
+      await ChatMessage.create({
+        chatId: currentChatId,
+        role: "assistant",
+        type: "text",
+        content: cleanScene
+      });
 
-  return res.json({
-    type: "text",
-    reply: cleanScene,
-    chatId: currentChatId
-  });
-}
+      return res.json({
+        type: "text",
+        reply: cleanScene,
+        chatId: currentChatId
+      });
+    }
 
     const imagePrompt = `
 Scena bazowa:
@@ -869,23 +873,24 @@ Stwórz NOWY obraz przedstawiający scenę podobną do opisanej powyżej,
 uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat.
 `;
 
-    const falResult = await fal.subscribe("fal-ai/flux/dev", {
-  input: {
-    prompt: imagePrompt,
-    persist: true,
-    storage: "public"
-  }
-});
+    // TU TEŻ UŻYWAMY fal.run
+    const falResult = await fal.run("fal-ai/flux/dev", {
+      input: {
+        prompt: imagePrompt,
+        persist: true,
+        storage: "public"
+      }
+    });
 
     const generatedImageUrl =
-  falResult?.output?.images?.[0]?.url ||
-  falResult?.data?.images?.[0]?.url ||
-  falResult?.dane?.obrazy?.[0]?.url;
+      falResult?.output?.images?.[0]?.url ||
+      falResult?.data?.images?.[0]?.url ||
+      falResult?.dane?.obrazy?.[0]?.url;
 
-if (!generatedImageUrl) {
-  console.error("❌ fal.ai nie zwróciło URL obrazu:", falResult);
-  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-}
+    if (!generatedImageUrl) {
+      console.error("❌ fal.ai nie zwróciło URL obrazu:", falResult);
+      return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+    }
 
     await ChatMessage.create({
       chatId: currentChatId,
