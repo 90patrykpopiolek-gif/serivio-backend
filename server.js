@@ -747,7 +747,11 @@ app.post("/generate-image", async (req, res) => {
     }
 
     const result = await fal.subscribe("fal-ai/flux/dev", {
-  input: { prompt },
+  input: {
+    prompt,
+    persist: true,
+    storage: "public"
+  }
 });
 
 // fal.ai zwraca wynik w result.output
@@ -866,8 +870,12 @@ uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat
 `;
 
     const falResult = await fal.subscribe("fal-ai/flux/dev", {
-      input: { prompt: imagePrompt }
-    });
+  input: {
+    prompt: imagePrompt,
+    persist: true,
+    storage: "public"
+  }
+});
 
     const generatedImageUrl =
   falResult?.output?.images?.[0]?.url ||
