@@ -211,11 +211,11 @@ const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
   const falResult = await fal.run("fal-ai/flux-pro", {
-    input: {
-      prompt: message,
-      image_size: "1024x1024"
-    }
-  });
+  prompt: message,
+  image_size: "square_hd"
+});
+
+  console.log("FAL RESULT:", JSON.stringify(falResult, null, 2));
 
   const imageUrl =
     falResult?.images?.[0]?.url ||
@@ -783,12 +783,12 @@ app.post("/generate-image", async (req, res) => {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
-    const result = await fal.run("fal-ai/flux-pro", {
-      input: {
-  prompt,
-  image_size: "1024x1024"
-}
-    });
+    const falResult = await fal.run("fal-ai/flux-pro", {
+  prompt: message,
+  image_size: "square_hd"
+});
+
+    console.log("FAL RESULT:", JSON.stringify(falResult, null, 2));
 
     const imageUrl =
       result?.images?.[0]?.url ||
@@ -910,11 +910,11 @@ uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat
 
     // TU TEŻ UŻYWAMY fal.run
     const falResult = await fal.run("fal-ai/flux-pro", {
-  input: {
   prompt: imagePrompt,
-  image_size: "1024x1024"
-}
+  image_size: "square_hd"
 });
+
+    console.log("FAL RESULT:", JSON.stringify(falResult, null, 2));
 
 const generatedImageUrl =
   falResult?.images?.[0]?.url ||
