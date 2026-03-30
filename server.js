@@ -738,6 +738,7 @@ app.get("/document-status/:documentId", async (req, res) => {
 // ===============================
 // POST /generate-image — generowanie obrazów fal.ai
 // ===============================
+// POST /generate-image — generowanie obrazów fal.ai
 app.post("/generate-image", async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -746,19 +747,23 @@ app.post("/generate-image", async (req, res) => {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
-    // UŻYWAMY fal.run zamiast fal.subscribe
-    const result = await fal.run("fal-ai/flux/dev", {
+    const result = await fal.run("fal-ai/flux-pro", {
       input: {
         prompt,
+        image_size: "1024x1024",
+        num_inference_steps: 28,
+        guidance_scale: 3.5,
+        seed: Math.floor(Math.random() * 999999),
         persist: true,
         storage: "public"
       }
     });
 
     const imageUrl =
+      result?.images?.[0]?.url ||
       result?.output?.images?.[0]?.url ||
-      result?.data?.images?.[0]?.url ||
-      result?.dane?.obrazy?.[0]?.url;
+      result?.output?.image ||
+      result?.image;
 
     if (!imageUrl) {
       console.error("❌ fal.ai nie zwróciło URL obrazu:", result);
@@ -772,7 +777,6 @@ app.post("/generate-image", async (req, res) => {
     res.status(500).json({ error: "Błąd generowania obrazu" });
   }
 });
-
 
 // ===============================
 // POST /chat-image — analiza zdjęcia + generowanie nowego obrazu
@@ -874,23 +878,28 @@ uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat
 `;
 
     // TU TEŻ UŻYWAMY fal.run
-    const falResult = await fal.run("fal-ai/flux/dev", {
-      input: {
-        prompt: imagePrompt,
-        persist: true,
-        storage: "public"
-      }
-    });
+    const falResult = await fal.run("fal-ai/flux-pro", {
+  input: {
+    prompt: imagePrompt,
+    image_size: "1024x1024",
+    num_inference_steps: 28,
+    guidance_scale: 3.5,
+    seed: Math.floor(Math.random() * 999999),
+    persist: true,
+    storage: "public"
+  }
+});
 
-    const generatedImageUrl =
-      falResult?.output?.images?.[0]?.url ||
-      falResult?.data?.images?.[0]?.url ||
-      falResult?.dane?.obrazy?.[0]?.url;
+const generatedImageUrl =
+  falResult?.images?.[0]?.url ||
+  falResult?.output?.images?.[0]?.url ||
+  falResult?.output?.image ||
+  falResult?.image;
 
-    if (!generatedImageUrl) {
-      console.error("❌ fal.ai nie zwróciło URL obrazu:", falResult);
-      return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-    }
+if (!generatedImageUrl) {
+  console.error("❌ fal.ai nie zwróciło URL obrazu:", falResult);
+  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+}
 
     await ChatMessage.create({
       chatId: currentChatId,
