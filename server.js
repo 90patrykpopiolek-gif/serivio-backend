@@ -206,6 +206,42 @@ app.post("/chat", async (req, res) => {
       type: "text"
     });
 
+    // sprawdzamy czy user chce obraz
+const wantsImage = await detectImageIntent(message);
+
+if (wantsImage) {
+  const falResult = await fal.run("fal-ai/flux-pro", {
+    input: {
+      prompt: message,
+      image_size: "1024x1024"
+    }
+  });
+
+  const imageUrl =
+    falResult?.images?.[0]?.url ||
+    falResult?.output?.images?.[0]?.url ||
+    falResult?.output?.image;
+
+  if (!imageUrl) {
+    console.error("❌ fal.ai error:", falResult);
+    return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+  }
+
+  await ChatMessage.create({
+    chatId: currentChatId,
+    role: "assistant",
+    type: "image",
+    content: "[GENERATED_IMAGE]",
+    imageUrl
+  });
+
+  return res.json({
+    type: "image",
+    imageUrl,
+    chatId: currentChatId
+  });
+}
+
     // LIMITUJEMY LICZBĘ WIADOMOŚCI DO 50
 const userCount = await ChatMessage.countDocuments({ chatId: currentChatId });
 if (userCount > 50) {
@@ -749,14 +785,9 @@ app.post("/generate-image", async (req, res) => {
 
     const result = await fal.run("fal-ai/flux-pro", {
       input: {
-        prompt,
-        image_size: "1024x1024",
-        num_inference_steps: 28,
-        guidance_scale: 3.5,
-        seed: Math.floor(Math.random() * 999999),
-        persist: true,
-        storage: "public"
-      }
+  prompt,
+  image_size: "1024x1024"
+}
     });
 
     const imageUrl =
@@ -880,14 +911,9 @@ uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat
     // TU TEŻ UŻYWAMY fal.run
     const falResult = await fal.run("fal-ai/flux-pro", {
   input: {
-    prompt: imagePrompt,
-    image_size: "1024x1024",
-    num_inference_steps: 28,
-    guidance_scale: 3.5,
-    seed: Math.floor(Math.random() * 999999),
-    persist: true,
-    storage: "public"
-  }
+  prompt: imagePrompt,
+  image_size: "1024x1024"
+}
 });
 
 const generatedImageUrl =
