@@ -210,10 +210,21 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
+  // Czyszczenie promptu - najważniejsze przy fal.ai
+  const cleanPrompt = message
+    .replace(/[\n\r\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  console.log("🖼️ Generowanie obrazu z promptu:", cleanPrompt.substring(0, 150) + "...");
+
   const falResult = await fal.run("fal-ai/flux-pro", {
-  prompt: message,
-  image_size: "square_hd"
-});
+    input: {
+      prompt: cleanPrompt,
+      image_size: "square_hd",     // poprawiona nazwa
+      num_images: 1
+    }
+  });
 
   console.log("FAL RESULT:", JSON.stringify(falResult, null, 2));
 
