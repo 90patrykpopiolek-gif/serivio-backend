@@ -772,40 +772,54 @@ app.get("/document-status/:documentId", async (req, res) => {
 });
 
 // ===============================
-// POST /generate-image — generowanie obrazów fal.ai
+// POST /generate-image — proste generowanie obrazu
 // ===============================
-// POST /generate-image — generowanie obrazów fal.ai
 app.post("/generate-image", async (req, res) => {
   try {
-    const { prompt } = req.body;
+    let { prompt } = req.body;
 
     if (!prompt || prompt.trim() === "") {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
+    // Czyszczenie promptu - KLUCZOWE dla fal.ai
+    const cleanPrompt = prompt
+      .replace(/[\n\r\t]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    console.log("🧹 Clean prompt:", cleanPrompt.substring(0, 250) + "...");
+
     const falResult = await fal.run("fal-ai/flux-pro", {
-  prompt: message,
-  image_size: "square_hd"
-});
+      input: {
+        prompt: cleanPrompt,
+        image_size: "square_hd",     // poprawiona nazwa parametru
+        num_images: 1,
+      }
+    });
 
-    console.log("FAL RESULT:", JSON.stringify(falResult, null, 2));
+    console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
 
-    const imageUrl =
-      result?.images?.[0]?.url ||
-      result?.output?.images?.[0]?.url ||
-      result?.output?.image ||
-      result?.image;
+    const imageUrl = falResult?.images?.[0]?.url ||
+                     falResult?.output?.images?.[0]?.url ||
+                     falResult?.images?.[0]?.url;
 
     if (!imageUrl) {
-      console.error("❌ fal.ai nie zwróciło URL obrazu:", result);
-      return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+      console.error("❌ fal.ai nie zwróciło URL:", falResult);
+      return res.status(500).json({ error: "fal.ai nie zwróciło obrazu" });
     }
 
-    res.json({ imageUrl });
+    return res.json({ 
+      imageUrl,
+      prompt: cleanPrompt 
+    });
 
   } catch (err) {
-    console.error("❌ Błąd generowania obrazu:", err);
-    res.status(500).json({ error: "Błąd generowania obrazu" });
+    console.error("❌ Błąd generowania obrazu:", err?.response?.body || err);
+    res.status(500).json({ 
+      error: "Błąd generowania obrazu", 
+      details: err?.response?.body?.detail || err.message 
+    });
   }
 });
 
@@ -836,10 +850,13 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       );
     }
 
-    const fileName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.jpg`;
+    // Poprawione template literals
+    const fileName = `\( {Date.now()}- \){crypto.randomBytes(6).toString("hex")}.jpg`;
     const filePath = path.join(UPLOAD_DIR, fileName);
     fs.writeFileSync(filePath, file.buffer);
-    const imageUrl = `${process.env.BACKEND_URL || "https://serivio-backend.onrender.com"}/uploads/${fileName}`;
+
+    const backendUrl = process.env.BACKEND_URL || "https://serivio-backend.onrender.com";
+    const imageUrl = `\( {backendUrl}/uploads/ \){fileName}`;
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -849,6 +866,7 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       imageUrl
     });
 
+    // Vision prompt
     const visionPrompt = message?.trim()
       ? `Najpierw bardzo szczegółowo opisz scenę na zdjęciu, potem potraktuj to jako kontekst do polecenia użytkownika: "${message}".`
       : "Opisz bardzo szczegółowo wszystko, co widzisz na zdjęciu (scena, obiekty, światło, perspektywa).";
@@ -860,7 +878,7 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
           role: "user",
           content: [
             { type: "text", text: visionPrompt },
-            { type: "image_url", image_url: { url: imageUrl } }
+            { type: "image_url", image_url: { url: imageUrl } }   // poprawione image_url
           ]
         }
       ],
@@ -873,59 +891,51 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
     const wantsImage = await detectImageIntent(message || "");
 
     if (!wantsImage) {
-      const cleanScene = (sceneDescription || "").trim();
-
-      if (!cleanScene) {
-        return res.json({
-          type: "text",
-          reply: "Nie potrafię dobrze opisać tej sceny. Spróbuj napisać, o co dokładnie Ci chodzi.",
-          chatId: currentChatId
-        });
-      }
-
       await ChatMessage.create({
         chatId: currentChatId,
         role: "assistant",
         type: "text",
-        content: cleanScene
+        content: sceneDescription
       });
 
       return res.json({
         type: "text",
-        reply: cleanScene,
+        reply: sceneDescription || "Nie udało się opisać zdjęcia.",
         chatId: currentChatId
       });
     }
 
+    // ==================== GENEROWANIE OBRAZU ====================
     const imagePrompt = `
-Scena bazowa:
-${sceneDescription}
+Scena bazowa: ${sceneDescription}
+Polecenie użytkownika: ${message || ""}
 
-Polecenie użytkownika:
-${message || ""}
+Stwórz NOWY, wysokiej jakości obraz przedstawiający scenę podobną do opisanej, uwzględniając polecenie użytkownika.
+Dopasuj perspektywę, oświetlenie i klimat.
+`.trim();
 
-Stwórz NOWY obraz przedstawiający scenę podobną do opisanej powyżej,
-uwzględniając polecenie użytkownika. Dopasuj perspektywę, światło i klimat.
-`;
+    // Czyszczenie promptu
+    const cleanImagePrompt = imagePrompt
+      .replace(/[\n\r\t]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
-    // TU TEŻ UŻYWAMY fal.run
     const falResult = await fal.run("fal-ai/flux-pro", {
-  prompt: imagePrompt,
-  image_size: "square_hd"
-});
+      input: {
+        prompt: cleanImagePrompt,
+        image_size: "square_hd",
+        num_images: 1,
+      }
+    });
 
-    console.log("FAL RESULT:", JSON.stringify(falResult, null, 2));
+    const generatedImageUrl = falResult?.images?.[0]?.url ||
+                              falResult?.output?.images?.[0]?.url ||
+                              falResult?.images?.[0]?.url;
 
-const generatedImageUrl =
-  falResult?.images?.[0]?.url ||
-  falResult?.output?.images?.[0]?.url ||
-  falResult?.output?.image ||
-  falResult?.image;
-
-if (!generatedImageUrl) {
-  console.error("❌ fal.ai nie zwróciło URL obrazu:", falResult);
-  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-}
+    if (!generatedImageUrl) {
+      console.error("❌ fal.ai nie zwróciło obrazu:", falResult);
+      return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+    }
 
     await ChatMessage.create({
       chatId: currentChatId,
@@ -942,7 +952,7 @@ if (!generatedImageUrl) {
     });
 
   } catch (err) {
-    console.error("❌ Błąd /chat-image:", err);
+    console.error("❌ Błąd /chat-image:", err?.response?.body || err);
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
