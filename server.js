@@ -221,20 +221,21 @@ if (wantsImage) {
   const falResult = await fal.run("fal-ai/flux-pro", {
     input: {
       prompt: cleanPrompt,
-      image_size: "square_hd",     // poprawiona nazwa
+      image_size: "square_hd",     // ← poprawione
       num_images: 1
     }
   });
 
-  console.log("FAL RESULT:", JSON.stringify(falResult, null, 2));
+  console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
 
-  const imageUrl =
-    falResult?.images?.[0]?.url ||
-    falResult?.output?.images?.[0]?.url ||
-    falResult?.output?.image;
+  // Poprawione wyciąganie URL (dostosowane do aktualnej struktury fal.ai)
+  const imageUrl = falResult?.data?.obrazy?.[0]?.url ||
+                   falResult?.obrazy?.[0]?.url ||
+                   falResult?.images?.[0]?.url ||
+                   falResult?.output?.images?.[0]?.url;
 
   if (!imageUrl) {
-    console.error("❌ fal.ai error:", falResult);
+    console.error("❌ Nie znaleziono URL obrazu:", falResult);
     return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
   }
 
@@ -804,16 +805,18 @@ app.post("/generate-image", async (req, res) => {
     const falResult = await fal.run("fal-ai/flux-pro", {
       input: {
         prompt: cleanPrompt,
-        image_size: "square_hd",     // poprawiona nazwa parametru
+        image_size: "square_hd",     // poprawione
         num_images: 1,
       }
     });
 
     console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
 
-    const imageUrl = falResult?.images?.[0]?.url ||
-                     falResult?.output?.images?.[0]?.url ||
-                     falResult?.images?.[0]?.url;
+    // Poprawione wyciąganie URL obrazu
+    const imageUrl = falResult?.data?.obrazy?.[0]?.url ||
+                     falResult?.obrazy?.[0]?.url ||
+                     falResult?.images?.[0]?.url ||
+                     falResult?.output?.images?.[0]?.url;
 
     if (!imageUrl) {
       console.error("❌ fal.ai nie zwróciło URL:", falResult);
@@ -889,7 +892,7 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
           role: "user",
           content: [
             { type: "text", text: visionPrompt },
-            { type: "image_url", image_url: { url: imageUrl } }   // poprawione image_url
+            { type: "image_url", image_url: { url: imageUrl } }
           ]
         }
       ],
@@ -934,14 +937,15 @@ Dopasuj perspektywę, oświetlenie i klimat.
     const falResult = await fal.run("fal-ai/flux-pro", {
       input: {
         prompt: cleanImagePrompt,
-        image_size: "square_hd",
+        image_size: "square_hd",     // poprawione
         num_images: 1,
       }
     });
 
-    const generatedImageUrl = falResult?.images?.[0]?.url ||
-                              falResult?.output?.images?.[0]?.url ||
-                              falResult?.images?.[0]?.url;
+    const generatedImageUrl = falResult?.data?.obrazy?.[0]?.url ||
+                              falResult?.obrazy?.[0]?.url ||
+                              falResult?.images?.[0]?.url ||
+                              falResult?.output?.images?.[0]?.url;
 
     if (!generatedImageUrl) {
       console.error("❌ fal.ai nie zwróciło obrazu:", falResult);
