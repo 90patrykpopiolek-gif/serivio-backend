@@ -252,6 +252,7 @@ if (!imageUrl) {
   return res.json({
     type: "image",
     imageUrl,
+    reply: null,
     chatId: currentChatId
   });
 }
