@@ -948,33 +948,44 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       });
     }
 
+    // ==================== GENEROWANIE OBRAZU NA PODSTAWIE ZDJĘCIA ====================
     const imagePrompt = `
-Scena bazowa: ${sceneDescription}
-Polecenie użytkownika: ${message || ""}
+Oryginalne zdjęcie pokazuje następującą scenę:
+${sceneDescription}
 
-Stwórz NOWY, wysokiej jakości obraz przedstawiający scenę podobną do opisanej, uwzględniając polecenie użytkownika.
-Dopasuj perspektywę, oświetlenie i klimat.
+Polecenie użytkownika: "${message || ""}"
+
+Zadanie:
+Użyj oryginalnego zdjęcia jako bazy. Stwórz NOWY obraz, który jest modyfikacją lub kontynuacją tej sceny.
+Dokładnie uwzględnij polecenie użytkownika (np. dodaj kota na stole, zamień obiekt na psa, zmień tło itp.).
+Zachowaj oświetlenie, perspektywę, kolorystykę i klimat oryginalnego zdjęcia tak bardzo jak to możliwe.
+Styl ma być spójny z oryginalnym zdjęciem.
+
+Wygeneruj wysokiej jakości, szczegółowy obraz.
 `.trim();
 
+    // Mocne czyszczenie promptu
     const cleanImagePrompt = imagePrompt
       .replace(/[\n\r\t]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+
+    console.log("🖼️ Prompt image-to-image:", cleanImagePrompt.substring(0, 300) + "...");
 
     const falResult = await fal.run("fal-ai/flux-pro", {
       input: {
         prompt: cleanImagePrompt,
         image_size: "square_hd",
         num_images: 1,
+        guidance_scale: 3.5,
+        num_inference_steps: 30
       }
     });
 
     const generatedImageUrl =
       falResult?.data?.images?.[0]?.url ||
       falResult?.images?.[0]?.url ||
-      falResult?.output?.images?.[0]?.url ||
-      falResult?.output?.image ||
-      falResult?.image;
+      falResult?.output?.images?.[0]?.url;
 
     if (!generatedImageUrl) {
       console.error("❌ fal.ai nie zwróciło obrazu:", falResult);
