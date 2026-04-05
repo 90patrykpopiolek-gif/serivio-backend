@@ -1001,10 +1001,11 @@ Wygeneruj wysokiej jakości, szczegółowy obraz.
     });
 
     return res.json({
-      type: "image",
-      imageUrl: generatedImageUrl,
-      chatId: currentChatId
-    });
+  type: "image",
+  imageUrl: generatedImageUrl,
+  reply: null,
+  chatId: currentChatId
+});
 
   } catch (err) {
     console.error("❌ Błąd /chat-image:", err?.response?.body || err);
