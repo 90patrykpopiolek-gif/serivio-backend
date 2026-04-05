@@ -845,12 +845,10 @@ app.post("/generate-image", async (req, res) => {
 
     console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
 
-    const imageUrl =
-      falResult?.data?.images?.[0]?.url ||
-      falResult?.images?.[0]?.url ||
-      falResult?.output?.images?.[0]?.url ||
-      falResult?.output?.image ||
-      falResult?.image;
+    const ImageUrl =
+  falResult?.data?.images?.[0]?.url ||
+  falResult?.images?.[0]?.url ||
+  falResult?.output?.images?.[0]?.url;
 
     if (!imageUrl) {
       console.error("❌ fal.ai nie zwróciło URL:", falResult);
@@ -981,6 +979,8 @@ Wygeneruj wysokiej jakości, szczegółowy obraz.
         num_inference_steps: 30
       }
     });
+
+    console.log("⬅️ FAL RESULT /chat-image:", JSON.stringify(falResult, null, 2));
 
     const generatedImageUrl =
       falResult?.data?.images?.[0]?.url ||
