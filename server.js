@@ -210,36 +210,56 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
-  // Czyszczenie promptu - najważniejsze przy fal.ai
-  const cleanPrompt = message
+  // 1) Tłumaczenie na angielski
+  const translation = await groq.chat.completions.create({
+    model: "meta-llama/llama-3.1-8b-instruct",
+    messages: [
+      {
+        role: "system",
+        content: "Translate the user's request into a clean English image generation prompt. Do NOT add anything. Only describe the scene."
+      },
+      {
+        role: "user",
+        content: message
+      }
+    ],
+    temperature: 0
+  });
+
+  const englishPrompt = (translation.choices[0].message.content || "").trim();
+
+  // 2) Czyszczenie promptu z komend typu 'generate', 'please' itd.
+  const cleanedPrompt = englishPrompt
+    .replace(/(generate|create|make|draw|please|image of)/gi, "")
     .replace(/[\n\r\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  console.log("🖼️ Generowanie obrazu z promptu:", cleanPrompt.substring(0, 150) + "...");
+  const finalPrompt = cleanedPrompt || englishPrompt || message;
+
+  console.log("🖼️ Generowanie obrazu z promptu (EN):", finalPrompt.substring(0, 150) + "...");
 
   const falResult = await fal.run("fal-ai/flux-pro", {
     input: {
-      prompt: cleanPrompt,
-      image_size: "square_hd",     // ← poprawione
+      prompt: finalPrompt,
+      image_size: "square_hd",
       num_images: 1
     }
   });
 
   console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
 
-  // Poprawione wyciąganie URL (dostosowane do aktualnej struktury fal.ai)
   const imageUrl =
-  falResult?.data?.images?.[0]?.url ||
-  falResult?.images?.[0]?.url ||
-  falResult?.output?.images?.[0]?.url ||
-  falResult?.output?.image ||
-  falResult?.image;
+    falResult?.data?.images?.[0]?.url ||
+    falResult?.images?.[0]?.url ||
+    falResult?.output?.images?.[0]?.url ||
+    falResult?.output?.image ||
+    falResult?.image;
 
-if (!imageUrl) {
-  console.error("❌ Nie znaleziono URL obrazu:", falResult);
-  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-}
+  if (!imageUrl) {
+    console.error("❌ Nie znaleziono URL obrazu:", falResult);
+    return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+  }
 
   await ChatMessage.create({
     chatId: currentChatId,
@@ -797,16 +817,38 @@ app.post("/generate-image", async (req, res) => {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
-    const cleanPrompt = prompt
+    // 1) Tłumaczenie na angielski
+    const translation = await groq.chat.completions.create({
+      model: "meta-llama/llama-3.1-8b-instruct",
+      messages: [
+        {
+          role: "system",
+          content: "Translate the user's request into a clean English image generation prompt. Do NOT add anything. Only describe the scene."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0
+    });
+
+    const englishPrompt = (translation.choices[0].message.content || "").trim();
+
+    // 2) Czyszczenie
+    const cleanedPrompt = englishPrompt
+      .replace(/(generate|create|make|draw|please|image of)/gi, "")
       .replace(/[\n\r\t]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
-    console.log("🧹 Clean prompt:", cleanPrompt.substring(0, 250) + "...");
+    const finalPrompt = cleanedPrompt || englishPrompt || prompt;
+
+    console.log("🧹 Final image prompt (EN):", finalPrompt.substring(0, 250) + "...");
 
     const falResult = await fal.run("fal-ai/flux-pro", {
       input: {
-        prompt: cleanPrompt,
+        prompt: finalPrompt,
         image_size: "square_hd",
         num_images: 1,
       }
