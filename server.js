@@ -1001,7 +1001,7 @@ finalPrompt = finalPrompt
 console.log("🇵🇱 Oryginalny image-to-image prompt:", imagePrompt);
 console.log("🇬🇧 Final Flux prompt:", finalPrompt);
 
-    console.log("🖼️ Prompt image-to-image:", cleanImagePrompt.substring(0, 300) + "...");
+    console.log("🖼️ Final translated prompt:", finalPrompt.substring(0, 300) + "...");
 
     const falResult = await fal.run("fal-ai/flux-pro", {
   input: {
