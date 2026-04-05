@@ -210,8 +210,28 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
+
+  // Tłumaczenie na angielski
+const translation = await groq.chat.completions.create({
+  model: "llama-3.1-8b-instant",
+  messages: [
+    {
+      role: "system",
+      content: "Translate the user's request into a clean English image generation prompt. Do NOT add anything. Only describe the scene."
+    },
+    {
+      role: "user",
+      content: message
+    }
+  ],
+  temperature: 0
+});
+
+const englishPrompt = (translation.choices[0].message.content || "").trim();
+  
   // Czyszczenie promptu - najważniejsze przy fal.ai
-  const cleanPrompt = message
+  const cleanPrompt = englishPrompt
+    .replace(/(generate|create|make|draw|please|image of)/gi, "")
     .replace(/[\n\r\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
