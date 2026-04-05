@@ -210,56 +210,36 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
-  // 1) Tłumaczenie na angielski
-  const translation = await groq.chat.completions.create({
-    model: "meta-llama/llama-3.1-8b-instruct",
-    messages: [
-      {
-        role: "system",
-        content: "Translate the user's request into a clean English image generation prompt. Do NOT add anything. Only describe the scene."
-      },
-      {
-        role: "user",
-        content: message
-      }
-    ],
-    temperature: 0
-  });
-
-  const englishPrompt = (translation.choices[0].message.content || "").trim();
-
-  // 2) Czyszczenie promptu z komend typu 'generate', 'please' itd.
-  const cleanedPrompt = englishPrompt
-    .replace(/(generate|create|make|draw|please|image of)/gi, "")
+  // Czyszczenie promptu - najważniejsze przy fal.ai
+  const cleanPrompt = message
     .replace(/[\n\r\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  const finalPrompt = cleanedPrompt || englishPrompt || message;
-
-  console.log("🖼️ Generowanie obrazu z promptu (EN):", finalPrompt.substring(0, 150) + "...");
+  console.log("🖼️ Generowanie obrazu z promptu:", cleanPrompt.substring(0, 150) + "...");
 
   const falResult = await fal.run("fal-ai/flux-pro", {
     input: {
-      prompt: finalPrompt,
-      image_size: "square_hd",
+      prompt: cleanPrompt,
+      image_size: "square_hd",     // ← poprawione
       num_images: 1
     }
   });
 
   console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
 
+  // Poprawione wyciąganie URL (dostosowane do aktualnej struktury fal.ai)
   const imageUrl =
-    falResult?.data?.images?.[0]?.url ||
-    falResult?.images?.[0]?.url ||
-    falResult?.output?.images?.[0]?.url ||
-    falResult?.output?.image ||
-    falResult?.image;
+  falResult?.data?.images?.[0]?.url ||
+  falResult?.images?.[0]?.url ||
+  falResult?.output?.images?.[0]?.url ||
+  falResult?.output?.image ||
+  falResult?.image;
 
-  if (!imageUrl) {
-    console.error("❌ Nie znaleziono URL obrazu:", falResult);
-    return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-  }
+if (!imageUrl) {
+  console.error("❌ Nie znaleziono URL obrazu:", falResult);
+  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+}
 
   await ChatMessage.create({
     chatId: currentChatId,
@@ -445,7 +425,7 @@ if (!reply) {
     chatId: currentChatId
   });
 }
-    
+
     await ChatMessage.create({
   chatId: currentChatId,
   role: "assistant",
@@ -817,38 +797,16 @@ app.post("/generate-image", async (req, res) => {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
-    // 1) Tłumaczenie na angielski
-    const translation = await groq.chat.completions.create({
-      model: "meta-llama/llama-3.1-8b-instruct",
-      messages: [
-        {
-          role: "system",
-          content: "Translate the user's request into a clean English image generation prompt. Do NOT add anything. Only describe the scene."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0
-    });
-
-    const englishPrompt = (translation.choices[0].message.content || "").trim();
-
-    // 2) Czyszczenie
-    const cleanedPrompt = englishPrompt
-      .replace(/(generate|create|make|draw|please|image of)/gi, "")
+    const cleanPrompt = prompt
       .replace(/[\n\r\t]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
-    const finalPrompt = cleanedPrompt || englishPrompt || prompt;
-
-    console.log("🧹 Final image prompt (EN):", finalPrompt.substring(0, 250) + "...");
+    console.log("🧹 Clean prompt:", cleanPrompt.substring(0, 250) + "...");
 
     const falResult = await fal.run("fal-ai/flux-pro", {
       input: {
-        prompt: finalPrompt,
+        prompt: cleanPrompt,
         image_size: "square_hd",
         num_images: 1,
       }
@@ -1028,7 +986,7 @@ app.get("/admob/reward-callback", async (req, res) => {
 if (!user) {
   user = await User.create({ _id: user_id, credits: 0 });
 }
-    
+
     const amount = parseInt(reward_amount || "1", 10);
     user.credits = (user.credits || 0) + amount;
     await user.save();
@@ -1159,6 +1117,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Serwer działa na porcie " + PORT);
 });
+
 
 
 
