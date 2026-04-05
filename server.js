@@ -817,10 +817,27 @@ app.post("/generate-image", async (req, res) => {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
-    const cleanPrompt = prompt
-      .replace(/[\n\r\t]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    // 1) Tłumaczenie na angielski
+const translation = await groq.chat.completions.create({
+  model: "llama-3.1-8b-instant",
+  messages: [
+    {
+      role: "system",
+      content: "Translate the user's request into a clean English image generation prompt. Do NOT add anything. Only describe the scene."
+    },
+    { role: "user", content: prompt }
+  ],
+  temperature: 0
+});
+
+const englishPrompt = (translation.choices[0].message.content || "").trim();
+
+// 2) Czyszczenie promptu
+const cleanPrompt = englishPrompt
+  .replace(/(generate|create|make|draw|please|image of)/gi, "")
+  .replace(/[\n\r\t]+/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
 
     console.log("🧹 Clean prompt:", cleanPrompt.substring(0, 250) + "...");
 
@@ -945,10 +962,27 @@ Stwórz NOWY, wysokiej jakości obraz przedstawiający scenę podobną do opisan
 Dopasuj perspektywę, oświetlenie i klimat.
 `.trim();
 
-    const cleanImagePrompt = imagePrompt
-      .replace(/[\n\r\t]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    // 1) Tłumaczenie na angielski
+const translation = await groq.chat.completions.create({
+  model: "llama-3.1-8b-instant",
+  messages: [
+    {
+      role: "system",
+      content: "Translate the user's request into a clean English image generation prompt. Do NOT add anything. Only describe the scene."
+    },
+    { role: "user", content: imagePrompt }
+  ],
+  temperature: 0
+});
+
+const englishPrompt = (translation.choices[0].message.content || "").trim();
+
+// 2) Czyszczenie promptu
+const cleanImagePrompt = englishPrompt
+  .replace(/(generate|create|make|draw|please|image of)/gi, "")
+  .replace(/[\n\r\t]+/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
 
     const falResult = await fal.run("fal-ai/flux-pro", {
       input: {
