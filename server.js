@@ -946,74 +946,63 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       });
     }
 
-    // ==================== GENEROWANIE OBRAZU NA PODSTAWIE ZDJĘCIA ====================
-    const imagePrompt = `
-Oryginalne zdjęcie pokazuje następującą scenę:
-${sceneDescription}
+    // ==================== GENEROWANIE OBRAZU Z FLUX KONtext [pro] ====================
 
-Polecenie użytkownika: "${message || ""}"
+    // Przygotowanie promptu edycji – ma być krótki i bezpośredni
+    let editPrompt = (message || "").trim();
 
-Zadanie:
-Użyj oryginalnego zdjęcia jako bazy. Stwórz NOWY obraz, który jest modyfikacją lub kontynuacją tej sceny.
-Dokładnie uwzględnij polecenie użytkownika (np. dodaj kota na stole, zamień obiekt na psa, zmień tło itp.).
-Zachowaj oświetlenie, perspektywę, kolorystykę i klimat oryginalnego zdjęcia tak bardzo jak to możliwe.
-Styl ma być spójny z oryginalnym zdjęciem.
-
-Wygeneruj wysokiej jakości, szczegółowy obraz.
-`.trim();
-
-    // === TŁUMACZENIE NA DOBRY PROMPT DO FLUX ===
-let rawPrompt = imagePrompt
-  .replace(/wygeneruj mi|proszę|zrób|stwórz|obraz|zdjęcie|grafikę/gi, "")
-  .replace(/ma być|styl ma być|jak w|w stylu/gi, "")
-  .trim();
-
-if (!rawPrompt) rawPrompt = imagePrompt;
-
-const translation = await groq.chat.completions.create({
-  model: "llama-3.3-70b-versatile",
-  messages: [
-    {
-      role: "system",
-      content: `Jesteś ekspertem od tworzenia promptów do Flux AI.
-Przetłumacz opis użytkownika na bardzo dobry, szczegółowy, naturalny angielski prompt.
-Skup się na obiekcie, kompozycji, stylu, oświetleniu, nastroju i jakości.
-Używaj artystycznych terminów.
-Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
-    },
-    {
-      role: "user",
-      content: rawPrompt
+    if (!editPrompt) {
+      editPrompt = "zrób subtelną edycję tego zdjęcia";
     }
-  ],
-  temperature: 0.3,
-  max_tokens: 280
-});
 
-let finalPrompt = translation.choices[0].message.content.trim();
+    // Opcjonalnie: dodaj wskazówkę o zachowaniu reszty zdjęcia (pomaga przy słabszych promptach)
+    if (!editPrompt.toLowerCase().includes("keep") && 
+        !editPrompt.toLowerCase().includes("zachowaj") && 
+        !editPrompt.toLowerCase().includes("same")) {
+      editPrompt += ". Zachowaj dokładnie tę samą kompozycję, oświetlenie, perspektywę, tło i styl jak na oryginalnym zdjęciu.";
+    }
 
-// Ostateczne czyszczenie
-finalPrompt = finalPrompt
-  .replace(/[\n\r\t]+/g, " ")
-  .replace(/\s+/g, " ")
-  .trim();
+    // Tłumaczenie na angielski (zalecane – Kontext działa lepiej z angielskim)
+    const translation = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content: `Jesteś ekspertem od promptów do FLUX.1 Kontext [pro].
+Przetłumacz instrukcję edycji na krótki, precyzyjny, naturalny angielski prompt.
+Zawsze podkreślaj zachowanie oryginalnej kompozycji, oświetlenia, perspektywy i reszty sceny.
+Przykłady:
+- "Add a flying happy corgi above the table, keep the exact same room, lighting, furniture and perspective."
+- "Replace the green bottle with a classic Red Bull energy drink bottle, keep the exact same fabric, lighting, shadows and angle."
+Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
+        },
+        {
+          role: "user",
+          content: editPrompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 180
+    });
 
-console.log("🇵🇱 Oryginalny image-to-image prompt:", imagePrompt);
-console.log("🇬🇧 Final Flux prompt:", finalPrompt);
+    const finalEditPrompt = translation.choices[0].message.content.trim();
 
-    console.log("🖼️ Final translated prompt:", finalPrompt.substring(0, 300) + "...");
+    console.log("📝 Final Kontext edit prompt:", finalEditPrompt);
+    console.log("🖼️ Reference image URL:", imageUrl);
 
-    const falResult = await fal.run("fal-ai/flux-pro", {
-  input: {
-    prompt: finalPrompt,
-    image_size: "square_hd",
-    num_images: 1,
-    guidance_scale: 3.5,
-    num_inference_steps: 30
-  }
-});
+    // Wywołanie modelu Kontext [pro]
+    const falResult = await fal.run("fal-ai/flux-pro/kontext", {
+      input: {
+        prompt: finalEditPrompt,      // instrukcja co zmienić
+        image_url: imageUrl,          // ← KLUCZOWE! oryginalne zdjęcie
+        num_images: 1,
+        guidance_scale: 3.5,          // 3.0 - 4.0 (niższa = bardziej wierny oryginałowi)
+        num_inference_steps: 28,      // 25-40, 28-35 to dobry balans jakości/szybkości
+        // seed: 123456789,           // odkomentuj jeśli chcesz powtarzalne wyniki
+      }
+    });
 
-    console.log("⬅️ FAL RESULT /chat-image:", JSON.stringify(falResult, null, 2));
+    console.log("✅ KONTEKST RESULT:", JSON.stringify(falResult, null, 2));
 
     const generatedImageUrl =
       falResult?.data?.images?.[0]?.url ||
