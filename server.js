@@ -206,40 +206,71 @@ app.post("/chat", async (req, res) => {
       type: "text"
     });
 
-    // sprawdzamy czy user chce obraz
+// =============================================
+// GENEROWANIE OBRAZU Z TŁUMACZENIEM NA ANGIELSKI
+// =============================================
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
-  // Czyszczenie promptu - najważniejsze przy fal.ai
-  const cleanPrompt = message
+  
+  // 1. Podstawowe czyszczenie polskiego tekstu
+  let rawPrompt = message
+    .replace(/wygeneruj mi|proszę|zrób|stwórz|obraz|zdjęcie|grafikę/gi, "")
+    .replace(/ma być|styl ma być|jak w|w stylu/gi, "")
+    .trim();
+
+  // 2. Tłumaczenie + optymalizacja promptu (to jest klucz!)
+  const translation = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",     // najlepszy model do tego zadania
+    messages: [
+      {
+        role: "system",
+        content: `Jesteś ekspertem od tworzenia promptów do Flux AI.
+Przetłumacz opis użytkownika na bardzo dobry, szczegółowy, naturalny angielski prompt.
+Skup się na obiekcie, kompozycji, stylu, oświetleniu, nastroju i jakości.
+Używaj artystycznych terminów.
+Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
+      },
+      {
+        role: "user",
+        content: rawPrompt || message
+      }
+    ],
+    temperature: 0.3,
+    max_tokens: 280
+  });
+
+  let finalPrompt = translation.choices[0].message.content.trim();
+
+  // 3. Ostateczne czyszczenie
+  finalPrompt = finalPrompt
     .replace(/[\n\r\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  console.log("🖼️ Generowanie obrazu z promptu:", cleanPrompt.substring(0, 150) + "...");
+  console.log("🇵🇱 Oryginalny prompt:", message);
+  console.log("🇬🇧 Final prompt dla Flux:", finalPrompt);
 
+  // 4. Generowanie obrazu
   const falResult = await fal.run("fal-ai/flux-pro", {
     input: {
-      prompt: cleanPrompt,
-      image_size: "square_hd",     // ← poprawione
-      num_images: 1
+      prompt: finalPrompt,
+      image_size: "square_hd",
+      num_images: 1,
+      guidance_scale: 3.5,      // lepiej trzyma się promptu
+      num_inference_steps: 28
     }
   });
 
-  console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
+  const imageUrl = 
+    falResult?.data?.images?.[0]?.url ||
+    falResult?.images?.[0]?.url ||
+    falResult?.output?.images?.[0]?.url;
 
-  // Poprawione wyciąganie URL (dostosowane do aktualnej struktury fal.ai)
-  const imageUrl =
-  falResult?.data?.images?.[0]?.url ||
-  falResult?.images?.[0]?.url ||
-  falResult?.output?.images?.[0]?.url ||
-  falResult?.output?.image ||
-  falResult?.image;
-
-if (!imageUrl) {
-  console.error("❌ Nie znaleziono URL obrazu:", falResult);
-  return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
-}
+  if (!imageUrl) {
+    console.error("❌ Nie znaleziono URL obrazu");
+    return res.status(500).json({ error: "Nie udało się wygenerować obrazu" });
+  }
 
   await ChatMessage.create({
     chatId: currentChatId,
