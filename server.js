@@ -214,8 +214,6 @@ const wantsImage = await detectImageIntent(message);
 if (wantsImage) {
 
   // ==================== LIMIT: generate ====================
-const backendUrl = process.env.BACKEND_URL || "https://serivio-backend.onrender.com";
-
 const creditResponse = await fetch(`${backendUrl}/credits/use`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -930,8 +928,6 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
     });
 
     // ==================== LIMIT: generate ====================
-const backendUrl = process.env.BACKEND_URL || "https://serivio-backend.onrender.com";
-
 const creditResponse = await fetch(`${backendUrl}/credits/use`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
