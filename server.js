@@ -845,7 +845,7 @@ app.post("/generate-image", async (req, res) => {
 
     console.log("✅ FAL RESULT:", JSON.stringify(falResult, null, 2));
 
-    const ImageUrl =
+    const imageUrl =
   falResult?.data?.images?.[0]?.url ||
   falResult?.images?.[0]?.url ||
   falResult?.output?.images?.[0]?.url;
