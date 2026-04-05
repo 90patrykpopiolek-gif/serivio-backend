@@ -213,6 +213,8 @@ const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
 
+  const backendUrl = process.env.BACKEND_URL || "https://serivio-backend.onrender.com";
+
   // ==================== LIMIT: generate ====================
 const creditResponse = await fetch(`${backendUrl}/credits/use`, {
   method: "POST",
