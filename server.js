@@ -962,23 +962,56 @@ Styl ma być spójny z oryginalnym zdjęciem.
 Wygeneruj wysokiej jakości, szczegółowy obraz.
 `.trim();
 
-    // Mocne czyszczenie promptu
-    const cleanImagePrompt = imagePrompt
-      .replace(/[\n\r\t]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    // === TŁUMACZENIE NA DOBRY PROMPT DO FLUX ===
+let rawPrompt = imagePrompt
+  .replace(/wygeneruj mi|proszę|zrób|stwórz|obraz|zdjęcie|grafikę/gi, "")
+  .replace(/ma być|styl ma być|jak w|w stylu/gi, "")
+  .trim();
+
+if (!rawPrompt) rawPrompt = imagePrompt;
+
+const translation = await groq.chat.completions.create({
+  model: "llama-3.3-70b-versatile",
+  messages: [
+    {
+      role: "system",
+      content: `Jesteś ekspertem od tworzenia promptów do Flux AI.
+Przetłumacz opis użytkownika na bardzo dobry, szczegółowy, naturalny angielski prompt.
+Skup się na obiekcie, kompozycji, stylu, oświetleniu, nastroju i jakości.
+Używaj artystycznych terminów.
+Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
+    },
+    {
+      role: "user",
+      content: rawPrompt
+    }
+  ],
+  temperature: 0.3,
+  max_tokens: 280
+});
+
+let finalPrompt = translation.choices[0].message.content.trim();
+
+// Ostateczne czyszczenie
+finalPrompt = finalPrompt
+  .replace(/[\n\r\t]+/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+
+console.log("🇵🇱 Oryginalny image-to-image prompt:", imagePrompt);
+console.log("🇬🇧 Final Flux prompt:", finalPrompt);
 
     console.log("🖼️ Prompt image-to-image:", cleanImagePrompt.substring(0, 300) + "...");
 
     const falResult = await fal.run("fal-ai/flux-pro", {
-      input: {
-        prompt: cleanImagePrompt,
-        image_size: "square_hd",
-        num_images: 1,
-        guidance_scale: 3.5,
-        num_inference_steps: 30
-      }
-    });
+  input: {
+    prompt: finalPrompt,
+    image_size: "square_hd",
+    num_images: 1,
+    guidance_scale: 3.5,
+    num_inference_steps: 30
+  }
+});
 
     console.log("⬅️ FAL RESULT /chat-image:", JSON.stringify(falResult, null, 2));
 
