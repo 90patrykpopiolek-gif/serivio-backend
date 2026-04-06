@@ -212,27 +212,6 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
-
-  const backendUrl = process.env.BACKEND_URL || "https://serivio-backend.onrender.com";
-
-  // ==================== LIMIT: generate ====================
-const creditResponse = await fetch(`${backendUrl}/credits/use`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    uid: userId,
-    type: "generate"
-  })
-});
-
-const creditData = await creditResponse.json();
-
-if (!creditResponse.ok) {
-  return res.status(403).json({
-    error: creditData.error || "Brak limitu dziennego lub kredytów na generowanie obrazu"
-  });
-}
-// ==========================================================
   
   // 1. Podstawowe czyszczenie polskiego tekstu
   let rawPrompt = message
@@ -928,25 +907,6 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       content: message?.trim() ? message : "[IMAGE]",
       imageUrl
     });
-
-    // ==================== LIMIT: generate ====================
-const creditResponse = await fetch(`${backendUrl}/credits/use`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    uid: userId,
-    type: "generate"
-  })
-});
-
-const creditData = await creditResponse.json();
-
-if (!creditResponse.ok) {
-  return res.status(403).json({
-    error: creditData.error || "Brak limitu dziennego lub kredytów na generowanie obrazu"
-  });
-}
-// ==========================================================
 
     const visionPrompt = message?.trim()
       ? `Najpierw bardzo szczegółowo opisz scenę na zdjęciu, potem potraktuj to jako kontekst do polecenia użytkownika: "${message}".`
