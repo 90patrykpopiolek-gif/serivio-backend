@@ -212,26 +212,6 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
-
-  const backendUrl = process.env.BACKEND_URL || "https://serivio-backend.onrender.com";
-
-const creditResponse = await fetch(`${backendUrl}/credits/use`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    uid: userId,        // 🔥 TO BYŁO BRAK
-    type: "generate"
-  })
-});
-
-const creditData = await creditResponse.json();
-
-if (!creditResponse.ok) {
-  return res.status(403).json({
-    error: creditData.error || "Brak limitu dziennego lub kredytów",
-    chatId: currentChatId
-  });
-}
   
   // 1. Podstawowe czyszczenie polskiego tekstu
   let rawPrompt = message
