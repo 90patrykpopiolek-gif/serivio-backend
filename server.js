@@ -212,7 +212,7 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
-  
+
   // 1. Podstawowe czyszczenie polskiego tekstu
   let rawPrompt = message
     .replace(/wygeneruj mi|proszę|zrób|stwórz|obraz|zdjęcie|grafikę/gi, "")
@@ -946,6 +946,44 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       });
     }
 
+    // ==================== GENEROWANIE OBRAZU NA PODSTAWIE ZDJĘCIA ====================
+    const imagePrompt = `
+Oryginalne zdjęcie pokazuje następującą scenę:
+${sceneDescription}
+
+Polecenie użytkownika: "${message || ""}"
+
+Zadanie:
+Użyj oryginalnego zdjęcia jako bazy. Stwórz NOWY obraz, który jest modyfikacją lub kontynuacją tej sceny.
+Dokładnie uwzględnij polecenie użytkownika (np. dodaj kota na stole, zamień obiekt na psa, zmień tło itp.).
+Zachowaj oświetlenie, perspektywę, kolorystykę i klimat oryginalnego zdjęcia tak bardzo jak to możliwe.
+Styl ma być spójny z oryginalnym zdjęciem.
+
+Wygeneruj wysokiej jakości, szczegółowy obraz.
+`.trim();
+
+    // === TŁUMACZENIE NA DOBRY PROMPT DO FLUX ===
+let rawPrompt = imagePrompt
+  .replace(/wygeneruj mi|proszę|zrób|stwórz|obraz|zdjęcie|grafikę/gi, "")
+  .replace(/ma być|styl ma być|jak w|w stylu/gi, "")
+  .trim();
+
+if (!rawPrompt) rawPrompt = imagePrompt;
+
+const translation = await groq.chat.completions.create({
+  model: "llama-3.3-70b-versatile",
+  messages: [
+    {
+      role: "system",
+      content: `Jesteś ekspertem od tworzenia promptów do Flux AI.
+Przetłumacz opis użytkownika na bardzo dobry, szczegółowy, naturalny angielski prompt.
+Skup się na obiekcie, kompozycji, stylu, oświetleniu, nastroju i jakości.
+Używaj artystycznych terminów.
+Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
+    },
+    {
+      role: "user",
+      content: rawPrompt
     // ==================== GENEROWANIE OBRAZU Z FLUX KONtext [pro] ====================
 
     // Przygotowanie promptu edycji – ma być krótki i bezpośredni
@@ -954,7 +992,12 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
     if (!editPrompt) {
       editPrompt = "zrób subtelną edycję tego zdjęcia";
     }
+  ],
+  temperature: 0.3,
+  max_tokens: 280
+});
 
+let finalPrompt = translation.choices[0].message.content.trim();
     // Opcjonalnie: dodaj wskazówkę o zachowaniu reszty zdjęcia (pomaga przy słabszych promptach)
     if (!editPrompt.toLowerCase().includes("keep") && 
         !editPrompt.toLowerCase().includes("zachowaj") && 
@@ -962,6 +1005,11 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       editPrompt += ". Zachowaj dokładnie tę samą kompozycję, oświetlenie, perspektywę, tło i styl jak na oryginalnym zdjęciu.";
     }
 
+// Ostateczne czyszczenie
+finalPrompt = finalPrompt
+  .replace(/[\n\r\t]+/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
     // Tłumaczenie na angielski (zalecane – Kontext działa lepiej z angielskim)
     const translation = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -985,11 +1033,23 @@ Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
       max_tokens: 180
     });
 
+console.log("🇵🇱 Oryginalny image-to-image prompt:", imagePrompt);
+console.log("🇬🇧 Final Flux prompt:", finalPrompt);
     const finalEditPrompt = translation.choices[0].message.content.trim();
 
+    console.log("🖼️ Final translated prompt:", finalPrompt.substring(0, 300) + "...");
     console.log("📝 Final Kontext edit prompt:", finalEditPrompt);
     console.log("🖼️ Reference image URL:", imageUrl);
 
+    const falResult = await fal.run("fal-ai/flux-pro", {
+  input: {
+    prompt: finalPrompt,
+    image_size: "square_hd",
+    num_images: 1,
+    guidance_scale: 3.5,
+    num_inference_steps: 30
+  }
+});
     // Wywołanie modelu Kontext [pro]
     const falResult = await fal.run("fal-ai/flux-pro/kontext", {
       input: {
@@ -1002,6 +1062,7 @@ Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
       }
     });
 
+    console.log("⬅️ FAL RESULT /chat-image:", JSON.stringify(falResult, null, 2));
     console.log("✅ KONTEKST RESULT:", JSON.stringify(falResult, null, 2));
 
     const generatedImageUrl =
@@ -1122,7 +1183,7 @@ app.post("/credits/use", async (req, res) => {
     let limitMax = 0;
 
     if (type === "generate") {
-      cost = 35;
+      cost = 25;
       limitField = "limitGenerateUsed";
       limitMax = 2;
     } else if (type === "photo") {
