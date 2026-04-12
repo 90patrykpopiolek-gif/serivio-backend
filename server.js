@@ -849,30 +849,6 @@ app.post("/generate-image", async (req, res) => {
       return res.status(400).json({ error: "Brak promptu" });
     }
 
-    // ===============================
-// LIMIT GENEROWANIA OBRAZÓW + KREDYTY PREMIUM
-// ===============================
-const user = await ensureUser(req.body.userId);
-
-const limitField = "limitGenerateUsed";
-const limitMax = 2;
-const cost = 35;
-
-if (user[limitField] < limitMax) {
-  user[limitField] += 1;
-  await user.save();
-} else {
-  if (user.credits < cost) {
-    return res.status(403).json({
-      error: "Wyczerpałeś darmowy limit generowania obrazów i nie masz kredytów."
-    });
-  }
-
-  user.credits -= cost;
-  user[limitField] += 1;
-  await user.save();
-}
-
     const cleanPrompt = prompt
       .replace(/[\n\r\t]+/g, " ")
       .replace(/\s+/g, " ")
@@ -977,21 +953,8 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
     const wantsImage = await detectImageIntent(message || "");
 
     if (!wantsImage) {
-      await ChatMessage.create({
-        chatId: currentChatId,
-        role: "assistant",
-        type: "text",
-        content: sceneDescription
-      });
 
-      return res.json({
-        type: "text",
-        reply: sceneDescription || "Nie udało się opisać zdjęcia.",
-        chatId: currentChatId
-      });
-    }
-
-    // ===============================
+// ===============================
 // LIMIT GENEROWANIA OBRAZÓW + KREDYTY PREMIUM
 // ===============================
 const user = await ensureUser(userId);
@@ -1014,6 +977,20 @@ if (user[limitField] < limitMax) {
   user[limitField] += 1;
   await user.save();
 }
+      
+      await ChatMessage.create({
+        chatId: currentChatId,
+        role: "assistant",
+        type: "text",
+        content: sceneDescription
+      });
+
+      return res.json({
+        type: "text",
+        reply: sceneDescription || "Nie udało się opisać zdjęcia.",
+        chatId: currentChatId
+      });
+    }
 
     // ==================== GENEROWANIE OBRAZU Z FLUX KONtext [pro] ====================
 
