@@ -20,6 +20,15 @@ const crypto = require("crypto");
 const { fal } = require("@fal-ai/client");
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
+async function urlExists(url) {
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 dotenv.config();
 
 fal.config({
