@@ -412,18 +412,14 @@ if (documentContext) {
 
 // dodaj historię rozmowy
 messagesForModel.push(
-  ...trimmedHistory
-    .map(m => {
-      // 🔥 jeśli to obraz — sprawdź, czy plik istnieje
+  ...(await Promise.all(
+    trimmedHistory.map(async m => {
       if (m.type === "image") {
-        const filePath = path.join(__dirname, "uploads", path.basename(m.imageUrl));
 
-        // jeśli plik NIE istnieje → pomiń tę wiadomość
-        if (!fs.existsSync(filePath)) {
-          return null;
-        }
+        // sprawdzamy czy URL działa
+        const exists = await urlExists(m.imageUrl);
+        if (!exists) return null;
 
-        // jeśli istnieje → wyślij do modelu
         return {
           role: "user",
           content: [
@@ -433,7 +429,6 @@ messagesForModel.push(
         };
       }
 
-      // opisy obrazów
       if (m.type === "image_description") {
         return {
           role: "system",
@@ -441,13 +436,12 @@ messagesForModel.push(
         };
       }
 
-      // normalne wiadomości
       return {
         role: m.role,
         content: m.content
       };
     })
-    .filter(Boolean) // usuń null (martwe obrazy)
+  )).filter(Boolean)
 );
 
 // dodaj wyniki wyszukiwania
