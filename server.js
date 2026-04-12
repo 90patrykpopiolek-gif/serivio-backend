@@ -212,6 +212,27 @@ app.post("/chat", async (req, res) => {
 const wantsImage = await detectImageIntent(message);
 
 if (wantsImage) {
+
+  const user = await ensureUser(userId);
+
+const limitField = "limitGenerateUsed";
+const limitMax = 2;
+const cost = 35;
+
+if (user[limitField] < limitMax) {
+  user[limitField] += 1;
+  await user.save();
+} else {
+  if (user.credits < cost) {
+    return res.status(403).json({
+      error: "Wyczerpałeś darmowy limit generowania obrazów i nie masz kredytów."
+    });
+  }
+
+  user.credits -= cost;
+  user[limitField] += 1;
+  await user.save();
+}
   
   // 1. Podstawowe czyszczenie polskiego tekstu
   let rawPrompt = message
