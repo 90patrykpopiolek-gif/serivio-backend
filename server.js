@@ -1199,7 +1199,7 @@ if (user[limitField] < limitMax) {
 
 // 2. Limit wyczerpany → sprawdzamy kredyty
 if (user.credits < cost) {
-  return res.status(403).json({ error: "Brak kredytów" });
+  return res.status(403).json({ error: "Wyczerpałeś darmowy limit i nie masz kredytów." });
 }
 
 // 3. Zużywamy kredyt
