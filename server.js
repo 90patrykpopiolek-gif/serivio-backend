@@ -1067,6 +1067,7 @@ Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
 
     await ChatMessage.create({
       chatId: currentChatId,
+      userId,
       role: "assistant",
       type: "image",
       content: "[GENERATED_IMAGE]",
