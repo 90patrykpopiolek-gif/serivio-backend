@@ -1225,26 +1225,25 @@ return res.json({
 });
 
 // ===============================
-// GET /images/:uid — historia obrazów
+// GET /images/chat/:chatId — obrazy z danego czatu
 // ===============================
-app.get("/images/:uid", async (req, res) => {
+app.get("/images/chat/:chatId", async (req, res) => {
   try {
-    const { uid } = req.params;
+    const { chatId } = req.params;
+
+    if (!chatId) {
+      return res.status(400).json({ error: "Brak chatId" });
+    }
 
     const images = await ChatMessage.find({
-      userId: uid,
+      chatId,
       type: "image"
     }).sort({ createdAt: -1 });
 
-    res.json({
-      images: images.map(img => ({
-        id: img._id,
-        url: img.imageUrl,
-        createdAt: img.createdAt
-      }))
-    });
+    res.json(images);
+
   } catch (err) {
-    console.error("❌ /images error:", err);
+    console.error("❌ Błąd /images/chat:", err);
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
