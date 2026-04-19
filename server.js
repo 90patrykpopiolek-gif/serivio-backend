@@ -1248,7 +1248,7 @@ app.get("/images/chat/:chatId", async (req, res) => {
   }
 });
 
-router.get("/images/all", async (req, res) => {
+app.get("/images/all", async (req, res) => {
     try {
         const userId = req.user.uid; // backend sam pobiera userId z tokena
 
