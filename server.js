@@ -304,6 +304,7 @@ Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
 
   await ChatMessage.create({
     chatId: currentChatId,
+    userId,
     role: "assistant",
     type: "image",
     content: "[GENERATED_IMAGE]",
@@ -959,6 +960,7 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       
       await ChatMessage.create({
         chatId: currentChatId,
+        userId,
         role: "assistant",
         type: "text",
         content: sceneDescription
