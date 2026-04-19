@@ -1248,6 +1248,27 @@ app.get("/images/chat/:chatId", async (req, res) => {
   }
 });
 
+router.get("/images/all", async (req, res) => {
+    try {
+        const userId = req.user.uid; // backend sam pobiera userId z tokena
+
+        // Pobierz wszystkie czaty użytkownika
+        const chats = await ChatSession.find({ userId }).select("_id");
+        const chatIds = chats.map(c => c._id.toString());
+
+        // Pobierz wszystkie obrazy z tych czatów
+        const images = await ChatMessage.find({
+            chatId: { $in: chatIds },
+            type: "image"
+        }).sort({ createdAt: -1 });
+
+        res.json(images);
+
+    } catch (err) {
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
 // ===============================
 // Start serwera
 // ===============================
