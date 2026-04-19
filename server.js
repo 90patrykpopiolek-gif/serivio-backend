@@ -1249,24 +1249,27 @@ app.get("/images/chat/:chatId", async (req, res) => {
 });
 
 app.get("/images/all", async (req, res) => {
-    try {
-        const userId = req.user.uid; // backend sam pobiera userId z tokena
+  try {
+    const userId = req.query.userId;
 
-        // Pobierz wszystkie czaty użytkownika
-        const chats = await ChatSession.find({ userId }).select("_id");
-        const chatIds = chats.map(c => c._id.toString());
-
-        // Pobierz wszystkie obrazy z tych czatów
-        const images = await ChatMessage.find({
-            chatId: { $in: chatIds },
-            type: "image"
-        }).sort({ createdAt: -1 });
-
-        res.json(images);
-
-    } catch (err) {
-        res.status(500).json({ error: "Server error" });
+    if (!userId) {
+      return res.status(400).json({ error: "Brak userId" });
     }
+
+    const chats = await ChatSession.find({ userId }).select("chatId");
+    const chatIds = chats.map(c => c.chatId);
+
+    const images = await ChatMessage.find({
+      chatId: { $in: chatIds },
+      type: "image"
+    }).sort({ createdAt: -1 });
+
+    res.json(images);
+
+  } catch (err) {
+    console.error("❌ Błąd /images/all:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
 });
 
 // ===============================
