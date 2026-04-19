@@ -1224,6 +1224,31 @@ return res.json({
 });
 
 // ===============================
+// GET /images/:uid — historia obrazów
+// ===============================
+app.get("/images/:uid", async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    const images = await ChatMessage.find({
+      userId: uid,
+      type: "image"
+    }).sort({ createdAt: -1 });
+
+    res.json({
+      images: images.map(img => ({
+        id: img._id,
+        url: img.imageUrl,
+        createdAt: img.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error("❌ /images error:", err);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+// ===============================
 // Start serwera
 // ===============================
 const PORT = process.env.PORT || 3000;
