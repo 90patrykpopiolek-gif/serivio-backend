@@ -306,7 +306,7 @@ Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
     chatId: currentChatId,
     role: "assistant",
     type: "image",
-    content: "[GENERATED_IMAGE]",
+    content: "",
     imageUrl
   });
 
@@ -612,7 +612,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       chatId: currentChatId,
       role: "user",
       type: "image",
-      content: message?.trim() ? message : "[IMAGE]",
+      content: "",
       imageUrl
     });
 
@@ -928,7 +928,7 @@ app.post("/chat-image", upload.single("file"), async (req, res) => {
       chatId: currentChatId,
       role: "user",
       type: "image",
-      content: message?.trim() ? message : "[IMAGE]",
+      content: "",
       imageUrl
     });
 
@@ -1068,7 +1068,7 @@ Wyjście: TYLKO czysty angielski prompt, bez żadnych dodatkowych słów.`
       chatId: currentChatId,
       role: "assistant",
       type: "image",
-      content: "[GENERATED_IMAGE]",
+      content: "",
       imageUrl: generatedImageUrl
     });
 
